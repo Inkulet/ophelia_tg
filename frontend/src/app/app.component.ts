@@ -42,7 +42,7 @@ export class AppComponent implements OnInit {
         }
       },
       error: (err) => {
-        console.error('Settings load failed', err);
+        console.error('Не удалось загрузить фон в app.component', err);
       },
     });
   }

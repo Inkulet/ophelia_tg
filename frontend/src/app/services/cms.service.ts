@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { catchError, map, Observable, of, shareReplay, throwError } from 'rxjs';
+import { map, Observable, shareReplay, throwError, catchError, of } from 'rxjs';
 import { Event, NewsPost, Post, Project, SiteSettings } from '../models/cms.model';
 
 type AnyRecord = Record<string, unknown>;
@@ -9,12 +9,16 @@ type AnyRecord = Record<string, unknown>;
   providedIn: 'root',
 })
 export class CmsService {
-  private readonly apiBase = '';
+  private readonly apiBase = this.resolveApiBase();
   private settingsRequest$?: Observable<SiteSettings>;
 
   constructor(private readonly http: HttpClient) {}
 
   getSiteSettings(forceReload = false): Observable<SiteSettings> {
+    if (typeof window === 'undefined') {
+      return of(this.normalizeSiteSettings({}));
+    }
+
     if (!this.settingsRequest$ || forceReload) {
       this.settingsRequest$ = this.http
         .get<AnyRecord | unknown>(`${this.apiBase}/cms/settings`)
@@ -22,7 +26,10 @@ export class CmsService {
           map((item) =>
             this.normalizeSiteSettings((item as AnyRecord) ?? {}),
           ),
-          catchError(() => of(this.emptySiteSettings())),
+          catchError((err) => {
+            console.error('Ошибка загрузки настроек, используем дефолтные:', err);
+            return of(this.normalizeSiteSettings({}));
+          }),
           shareReplay(1),
         );
     }
@@ -127,19 +134,6 @@ export class CmsService {
         'contact_location',
         'ContactLocation',
       ]),
-    };
-  }
-
-  private emptySiteSettings(): SiteSettings {
-    return {
-      id: '',
-      backgroundURL: '',
-      avatarURL: '',
-      homeDescription: '',
-      aboutText: '',
-      contactEmail: '',
-      contactPhone: '',
-      contactLocation: '',
     };
   }
 
@@ -276,5 +270,25 @@ export class CmsService {
       }
     }
     return null;
+  }
+
+  private resolveApiBase(): string {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+
+    const override = window.localStorage?.getItem('ophelia_api_base')?.trim() ?? '';
+    if (override !== '') {
+      return override.replace(/\/+$/, '');
+    }
+
+    const { protocol, hostname, port } = window.location;
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+
+    if (isLocalhost && port === '4200') {
+      return `${protocol}//${hostname}:8080`;
+    }
+
+    return '';
   }
 }
