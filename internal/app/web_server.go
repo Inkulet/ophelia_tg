@@ -4,15 +4,19 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
 
 const (
-	defaultWebAddr = ":8080"
+	defaultWebAddr         = ":8080"
+	defaultFrontendDevAddr = "http://127.0.0.1:4200"
 )
 
 func startWebServer(addr string, cmsService *CMSService) {
@@ -51,10 +55,13 @@ func startWebServer(addr string, cmsService *CMSService) {
 	}))
 
 	frontendRoot := resolveFrontendBuildRoot()
+	frontendDevURL := strings.TrimSpace(os.Getenv("OPHELIA_FRONTEND_DEV_URL"))
+	if frontendDevURL == "" {
+		frontendDevURL = defaultFrontendDevAddr
+	}
 	log.Printf("📦 Frontend root: %s", frontendRoot)
 
-	handler := spaFallbackHandler(mux, frontendRoot)
-
+	handler := spaFallbackHandler(mux, frontendRoot, frontendDevURL)
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
@@ -83,15 +90,17 @@ func resolveFrontendBuildRoot() string {
 	}
 
 	bases := []string{"."}
+	if _, file, _, ok := runtime.Caller(0); ok {
+		projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(file)))
+		bases = append(bases, projectRoot)
+	}
 	if exePath, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exePath)
-		bases = append(bases, exeDir)
-		bases = append(bases, filepath.Dir(exeDir))
-		bases = append(bases, filepath.Dir(filepath.Dir(exeDir)))
+		bases = append(bases, exeDir, filepath.Dir(exeDir), filepath.Dir(filepath.Dir(exeDir)))
 	}
 
 	tried := make([]string, 0, len(bases)*len(relCandidates))
-	for _, base := range bases {
+	for _, base := range dedupeStrings(bases) {
 		for _, rel := range relCandidates {
 			candidate := filepath.Clean(filepath.Join(base, rel))
 			tried = append(tried, candidate)
@@ -103,11 +112,6 @@ func resolveFrontendBuildRoot() string {
 
 	log.Printf("⚠️ Frontend build dir not found. Checked: %s", strings.Join(tried, ", "))
 	return filepath.Join(".", relCandidates[0])
-}
-
-func isDir(p string) bool {
-	info, err := os.Stat(p)
-	return err == nil && info.IsDir()
 }
 
 func requireValidUserID(next http.Handler) http.Handler {
@@ -139,12 +143,19 @@ func requireAdminIDForCreatePost(next http.Handler) http.Handler {
 	})
 }
 
-func spaFallbackHandler(apiMux *http.ServeMux, frontendRoot string) http.Handler {
-	indexPath := filepath.Join(frontendRoot, "index.html")
+func spaFallbackHandler(apiMux *http.ServeMux, frontendRoot, frontendDevURL string) http.Handler {
+	indexPath := resolveIndexFile(frontendRoot)
+	indexExists := indexPath != ""
+
 	staticFS := http.FileServer(http.Dir(frontendRoot))
 	absRoot, err := filepath.Abs(frontendRoot)
 	if err != nil {
 		absRoot = frontendRoot
+	}
+
+	devProxy := newDevProxy(frontendDevURL)
+	if !indexExists && devProxy != nil {
+		log.Printf("⚠️ Frontend index file not found under %s, proxying to %s", frontendRoot, frontendDevURL)
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -153,7 +164,7 @@ func spaFallbackHandler(apiMux *http.ServeMux, frontendRoot string) http.Handler
 			return
 		}
 
-		if tryServeStaticAsset(staticFS, absRoot, r, w) {
+		if indexExists && tryServeStaticAsset(staticFS, absRoot, r, w) {
 			return
 		}
 
@@ -164,11 +175,17 @@ func spaFallbackHandler(apiMux *http.ServeMux, frontendRoot string) http.Handler
 			return
 		}
 
-		if _, err := os.Stat(indexPath); err != nil {
-			writeCMSError(w, http.StatusServiceUnavailable, "frontend build not found")
+		if indexExists {
+			http.ServeFile(w, r, indexPath)
 			return
 		}
-		http.ServeFile(w, r, indexPath)
+
+		if devProxy != nil {
+			devProxy.ServeHTTP(w, r)
+			return
+		}
+
+		writeCMSError(w, http.StatusServiceUnavailable, "frontend build not found")
 	})
 }
 
@@ -197,4 +214,57 @@ func tryServeStaticAsset(fs http.Handler, root string, r *http.Request, w http.R
 
 	fs.ServeHTTP(w, r)
 	return true
+}
+
+func isDir(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && info.IsDir()
+}
+
+func isFile(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
+}
+
+func newDevProxy(raw string) http.Handler {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		log.Printf("⚠️ Invalid OPHELIA_FRONTEND_DEV_URL: %s", raw)
+		return nil
+	}
+	return httputil.NewSingleHostReverseProxy(u)
+}
+
+func dedupeStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
+func resolveIndexFile(frontendRoot string) string {
+	candidates := []string{
+		filepath.Join(frontendRoot, "index.html"),
+		filepath.Join(frontendRoot, "index.csr.html"),
+	}
+	for _, candidate := range candidates {
+		if isFile(candidate) {
+			return candidate
+		}
+	}
+	return ""
 }
