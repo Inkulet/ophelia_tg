@@ -21,6 +21,8 @@ import { SidebarComponent } from './components/sidebar/sidebar.component';
           <li><a routerLink="/">Главная</a></li>
           <li><a routerLink="/about">О себе</a></li>
           <li><a routerLink="/skills">Экскурсии</a></li>
+          <li><a routerLink="/news">Новости</a></li>
+          <li><a routerLink="/events">Мероприятия</a></li>
           <li><a routerLink="/projects">Проекты</a></li>
           <li><a routerLink="/contact">Контакты</a></li>
         </ul>

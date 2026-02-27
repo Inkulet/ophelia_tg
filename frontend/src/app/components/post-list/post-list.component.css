@@ -1,0 +1,63 @@
+.section-container {
+  width: 100%;
+  max-width: 1100px;
+  padding: 2rem;
+  border-radius: 14px;
+  background: rgba(43, 44, 37, 0.82);
+  border: 1px solid rgba(179, 173, 164, 0.25);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(6px);
+}
+
+.section-title {
+  margin-bottom: 1.5rem;
+  color: var(--platinum);
+  border-bottom: 2px solid var(--axolotl);
+  padding-bottom: 0.6rem;
+}
+
+.state-text {
+  color: var(--platinum);
+  opacity: 0.92;
+}
+
+.state-text.error {
+  color: #ffb3b3;
+}
+
+.posts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
+
+.post-card {
+  border-radius: 12px;
+  padding: 1rem;
+  background: rgba(113, 112, 92, 0.2);
+  border: 1px solid rgba(179, 173, 164, 0.2);
+}
+
+.media-wrap {
+  margin-bottom: 0.85rem;
+}
+
+.media-wrap img,
+.media-wrap video {
+  width: 100%;
+  max-height: 260px;
+  border-radius: 10px;
+  object-fit: cover;
+  display: block;
+}
+
+.post-title {
+  color: var(--platinum);
+  margin-bottom: 0.6rem;
+}
+
+.post-content {
+  color: var(--platinum);
+  opacity: 0.92;
+  white-space: pre-wrap;
+}

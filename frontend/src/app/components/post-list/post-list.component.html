@@ -1,0 +1,31 @@
+<div class="section-container">
+  <h2 class="section-title">Новости</h2>
+
+  <p class="state-text" *ngIf="loading">Загружаем публикации...</p>
+  <p class="state-text error" *ngIf="!loading && error">{{ error }}</p>
+  <p class="state-text" *ngIf="!loading && !error && posts.length === 0">
+    Пока нет опубликованных постов.
+  </p>
+
+  <div class="posts-grid" *ngIf="!loading && !error && posts.length > 0">
+    <article class="post-card" *ngFor="let post of posts">
+      <div class="media-wrap" *ngIf="post.mediaPath">
+        <img
+          *ngIf="!isVideo(post.mediaPath)"
+          [src]="mediaUrl(post.mediaPath)"
+          [alt]="post.title"
+          loading="lazy"
+        >
+        <video
+          *ngIf="isVideo(post.mediaPath)"
+          controls
+          preload="metadata"
+          [src]="mediaUrl(post.mediaPath)"
+        ></video>
+      </div>
+
+      <h3 class="post-title">{{ post.title }}</h3>
+      <p class="post-content">{{ post.content }}</p>
+    </article>
+  </div>
+</div>

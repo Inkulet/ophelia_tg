@@ -5,6 +5,7 @@ go 1.25
 require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/wcharczuk/go-chart/v2 v2.1.2
+	go.mongodb.org/mongo-driver v1.17.6
 	gopkg.in/telebot.v3 v3.3.8
 	gorm.io/gorm v1.31.1
 )

@@ -13,6 +13,10 @@ ophelia_tg
 *.test
 *.out
 
+# Local Go caches
+.gocache/
+.gomodcache/
+
 # IDE / editors
 .idea/
 .vscode/
@@ -43,6 +47,7 @@ storage/backups/
 storage/db/*.db
 storage/db/*.db-shm
 storage/db/*.db-wal
+uploads/
 
 # Runtime JSON data
 data/stats.json
