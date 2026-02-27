@@ -1,0 +1,483 @@
+/* Основной контейнер */
+.section-container {
+  padding: 2rem 1rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  min-height: 100vh;
+}
+
+.section-title {
+  font-size: clamp(1.5rem, 5vw, 2.5rem);
+  color: var(--pine-tree);
+  text-align: center;
+  margin-bottom: 3rem;
+  position: relative;
+  padding-bottom: 1rem;
+}
+
+.section-title::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 2px;
+  background: var(--axolotl);
+}
+
+/* Контейнер для карточек */
+.cards-container {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+
+.cards-wrapper {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+  gap: 1.5rem;
+  padding: 1rem 0.5rem;
+}
+
+.cards-wrapper::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* Индикаторы прокрутки */
+.scroll-indicator {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #ddd;
+  transition: background-color 0.3s ease;
+}
+
+.dot.active {
+  background-color: var(--axolotl);
+}
+
+/* Карточка экскурсии (свернутое состояние) */
+.tour-card {
+  flex: 0 0 300px;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  background-color: #fff;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  scroll-snap-align: start;
+  position: relative;
+  cursor: pointer;
+}
+
+.tour-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.card-image {
+  position: relative;
+  height: 200px;
+  overflow: hidden;
+}
+
+.card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.5s ease;
+}
+
+.tour-card:hover .card-image img {
+  transform: scale(1.05);
+}
+
+.card-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background-color: rgba(255, 255, 255, 0.9);
+  color: var(--pine-tree);
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.card-content {
+  padding: 1.25rem;
+}
+
+.card-title {
+  font-size: 1.25rem;
+  color: var(--pine-tree);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.card-subtitle {
+  color: var(--axolotl);
+  font-size: 0.9rem;
+  margin-bottom: 1.25rem;
+}
+
+.card-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.action-button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: transform 0.2s ease, color 0.2s ease;
+  color: var(--pine-tree);
+}
+
+.action-button:hover {
+  transform: scale(1.1);
+  color: var(--axolotl);
+}
+
+.action-button.details {
+  background-color: var(--axolotl);
+  color: white;
+  padding: 0.5rem 1.25rem;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+.action-button.details:hover {
+  background-color: var(--pine-tree);
+  transform: translateY(-2px);
+}
+
+/* Кнопка лайка */
+.like-button {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.8);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  z-index: 5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  opacity: 0.7;
+}
+
+.like-button:hover {
+  transform: scale(1.1);
+  opacity: 1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.like-button.liked {
+  background: rgba(255, 255, 255, 0.95);
+  opacity: 1;
+}
+
+.like-button.expanded {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  left: auto;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.heart-icon {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23798777' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'%3E%3C/path%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  transition: transform 0.3s ease, background-image 0.3s ease;
+}
+
+.heart-icon.filled {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23798777' stroke='%23798777' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'%3E%3C/path%3E%3C/svg%3E");
+  transform: scale(1.2);
+}
+
+.like-button:active .heart-icon {
+  transform: scale(1.3);
+}
+
+/* Анимация пульсации при лайке */
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+.like-button.liked .heart-icon {
+  animation: pulse 0.3s ease-in-out;
+}
+
+/* Разделитель между лайкнутыми и обычными карточками */
+.liked-separator {
+  width: 100%;
+  height: 1px;
+  background: rgba(121, 135, 119, 0.2);
+  margin: 1rem 0;
+  position: relative;
+}
+
+.liked-separator::after {
+  content: 'Лайкнутые';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 0 1rem;
+  font-size: 0.8rem;
+  color: var(--axolotl);
+}
+
+/* Карточка экскурсии (развернутое состояние) */
+.tour-card.expanded {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  border-radius: 0;
+  overflow-y: auto;
+  transform: none;
+  animation: card-expand 0.3s ease;
+  cursor: default;
+}
+
+@keyframes card-expand {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.card-header {
+  position: sticky;
+  top: 0;
+  background-color: var(--black-olive);
+  color: white;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+.close-button {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.card-gallery {
+  position: relative;
+}
+
+.gallery-slider {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.gallery-slider::-webkit-scrollbar {
+  display: none;
+}
+
+.gallery-image {
+  flex: 0 0 100%;
+  width: 100%;
+  height: 300px;
+  object-fit: cover;
+  scroll-snap-align: start;
+}
+
+.gallery-dots {
+  position: absolute;
+  bottom: 1rem;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.card-description {
+  padding: 1.5rem;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--pine-tree);
+}
+
+.card-details {
+  background: rgba(197, 198, 199, 0.1);
+  padding: 1.5rem;
+  margin: 0 1.5rem;
+  border-radius: 8px;
+}
+
+.detail-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.detail-item:last-child {
+  margin-bottom: 0;
+}
+
+.detail-item i {
+  color: var(--axolotl);
+}
+
+.location-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  padding: 1.5rem;
+}
+
+.location-image, .map-image {
+  width: 100%;
+  height: 250px;
+  object-fit: cover;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.map-container {
+  position: relative;
+}
+
+.map-annotation {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0 0 8px 8px;
+}
+
+.card-quote {
+  text-align: center;
+  font-style: italic;
+  padding: 2rem 1.5rem;
+  margin: 1.5rem;
+  border-left: 4px solid var(--axolotl);
+  background: rgba(121, 135, 119, 0.05);
+  color: var(--pine-tree);
+}
+
+.card-actions.expanded {
+  padding: 1.5rem;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.action-button.primary {
+  background-color: var(--axolotl);
+  color: white;
+  padding: 0.75rem 2rem;
+  border-radius: 24px;
+  font-weight: 500;
+  font-size: 1rem;
+}
+
+.action-button.secondary {
+  border: 1px solid var(--axolotl);
+  color: var(--axolotl);
+  padding: 0.75rem 2rem;
+  border-radius: 24px;
+  font-weight: 500;
+  font-size: 1rem;
+}
+
+/* Блокировка прокрутки основной страницы при открытой карточке */
+body.no-scroll {
+  overflow: hidden;
+}
+
+/* Адаптивность */
+@media (min-width: 768px) {
+  .tour-card {
+    flex: 0 0 350px;
+  }
+
+  .card-image {
+    height: 230px;
+  }
+
+  .tour-card.expanded {
+    width: 90%;
+    height: 90%;
+    max-width: 1000px;
+    max-height: 800px;
+    top: 5%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-radius: 16px;
+  }
+
+  .location-container {
+    padding: 2rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .location-container {
+    grid-template-columns: 1fr;
+  }
+
+  .card-actions.expanded {
+    flex-direction: column;
+  }
+
+  .like-button {
+    width: 44px;
+    height: 44px;
+  }
+}

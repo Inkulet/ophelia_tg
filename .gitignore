@@ -18,6 +18,22 @@ ophelia_tg
 .vscode/
 *.iml
 
+# Frontend (Angular)
+frontend/node_modules/
+frontend/.angular/
+frontend/dist/
+frontend/coverage/
+frontend/.cache/
+frontend/.sass-cache/
+frontend/out-tsc/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
 # Runtime logs
 logs/
 

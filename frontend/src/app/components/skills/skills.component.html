@@ -1,0 +1,117 @@
+<div class="section-container">
+  <h2 class="section-title">Экскурсионные программы</h2>
+
+  <!-- Контейнер для карточек с горизонтальной прокруткой -->
+  <div class="cards-container">
+    <!-- Индикаторы прокрутки -->
+    <div class="scroll-indicator">
+      <span class="dot active"></span>
+      <span class="dot" *ngFor="let _ of sortedTours.slice(1)"></span>
+    </div>
+
+    <!-- Карточки экскурсий -->
+    <div class="cards-wrapper">
+      <!-- Карточки с сортировкой (лайкнутые сверху) -->
+      <div class="tour-card" *ngFor="let tour of sortedTours" (click)="expandCard($event, tour)">
+        <div class="card-image">
+          <img [src]="tour.images[0].src" [alt]="tour.title">
+          <div class="card-badge">{{tour.badge}}</div>
+
+          <!-- Кнопка лайка в правом верхнем углу -->
+          <button class="like-button" [class.liked]="tour.liked" (click)="toggleLike($event, tour.id)">
+            <i class="heart-icon" [class.filled]="tour.liked"></i>
+          </button>
+        </div>
+
+        <div class="card-content">
+          <h3 class="card-title">{{tour.title}}</h3>
+          <p class="card-subtitle">{{tour.subtitle}}</p>
+
+          <div class="card-actions">
+            <button class="action-button details" (click)="expandCard($event, tour)">
+              Подробнее
+            </button>
+            <button class="action-button share" (click)="$event.stopPropagation()">
+              <i class="material-icons">share</i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Шаблон для развернутой карточки (будет клонироваться через JS) -->
+<ng-template #expandedCardTemplate let-tour>
+  <div class="tour-card expanded">
+    <div class="card-header">
+      <button class="close-button" (click)="closeExpandedCard()">
+        <i class="material-icons">arrow_back</i>
+      </button>
+
+      <!-- Кнопка лайка в заголовке развернутой карточки -->
+      <button class="like-button expanded" [class.liked]="tour.liked" (click)="toggleLikeInExpandedCard($event)">
+        <i class="heart-icon" [class.filled]="tour.liked"></i>
+      </button>
+
+      <h3 class="card-title">{{tour.title}}</h3>
+      <p class="card-subtitle">{{tour.subtitle}}</p>
+    </div>
+
+    <div class="card-gallery">
+      <div class="gallery-slider">
+        <img *ngFor="let image of tour.images"
+             [src]="image.src"
+             [alt]="image.alt"
+             class="gallery-image">
+      </div>
+      <div class="gallery-dots">
+        <span *ngFor="let image of tour.images; let i = index"
+              class="dot"
+              [class.active]="i === 0"></span>
+      </div>
+    </div>
+
+    <div class="card-description">
+      <p>{{tour.description}}</p>
+    </div>
+
+    <div class="card-details">
+      <div class="detail-item">
+        <i class="material-icons">location_on</i>
+        <p>{{tour.location}}</p>
+      </div>
+      <div class="detail-item">
+        <i class="material-icons">schedule</i>
+        <p>{{tour.schedule}}</p>
+      </div>
+      <div class="detail-item">
+        <i class="material-icons">group</i>
+        <p>{{tour.group}}</p>
+      </div>
+    </div>
+
+    <div class="location-container">
+      <div class="museum-photo">
+        <img [src]="tour.museumPhoto" alt="Здание музея" class="location-image">
+      </div>
+      <div class="map-container">
+        <a [href]="tour.mapLink" target="_blank" class="map-link">
+          <img [src]="tour.mapImage" alt="Карта расположения" class="map-image">
+        </a>
+        <div class="map-annotation">
+          <i class="material-icons">subway</i> {{tour.metro}}
+        </div>
+      </div>
+    </div>
+
+    <blockquote class="card-quote" *ngIf="tour.quote">
+      "{{tour.quote}}"
+    </blockquote>
+
+    <div class="card-actions expanded">
+      <button class="action-button primary">Записаться</button>
+      <button class="action-button secondary">Поделиться</button>
+    </div>
+  </div>
+</ng-template>
