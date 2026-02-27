@@ -1,0 +1,64 @@
+# OS
+.DS_Store
+
+# Build artifacts
+bin/
+dist/
+bot_linux
+ophelia_tg
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDE / editors
+.idea/
+.vscode/
+*.iml
+
+# Runtime logs
+logs/
+
+# Runtime storage
+storage/tmp/
+storage/backups/
+storage/db/*.db
+storage/db/*.db-shm
+storage/db/*.db-wal
+
+# Runtime JSON data
+data/stats.json
+data/gamestats.json
+
+# Sensitive/local configs
+configs/config.json
+configs/moderation/admin.json
+configs/moderation/whitelist.json
+configs/moderation/words.json
+
+# Keep examples tracked
+!configs/config.example.json
+!configs/moderation/admin.example.json
+!configs/moderation/whitelist.example.json
+!configs/moderation/words.example.json
+
+# Legacy root runtime artifacts (before migration)
+bot.log
+errors.log
+bot-*.log
+bot-*.log.gz
+errors-*.log
+errors-*.log.gz
+women.db
+women.db-shm
+women.db-wal
+women_backup_auto.db
+women_temp.db
+config.json
+admin.json
+whitelist.json
+words.json
+stats.json
+gamestats.json
