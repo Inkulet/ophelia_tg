@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -396,7 +397,56 @@ func extractCMSUserID(r *http.Request) (int64, error) {
 		}
 		return id, nil
 	}
+	if id, ok := parseJSONUserID(r); ok {
+		return id, nil
+	}
 	return 0, errors.New("user_id is required")
+}
+
+func parseJSONUserID(r *http.Request) (int64, bool) {
+	if r == nil || r.Body == nil {
+		return 0, false
+	}
+
+	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
+	if !strings.HasPrefix(contentType, "application/json") {
+		return 0, false
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return 0, false
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+
+	if len(body) == 0 {
+		return 0, false
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return 0, false
+	}
+
+	raw, ok := payload["user_id"]
+	if !ok {
+		return 0, false
+	}
+
+	switch v := raw.(type) {
+	case float64:
+		id := int64(v)
+		if float64(id) == v && id > 0 {
+			return id, true
+		}
+	case string:
+		id, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		if err == nil && id > 0 {
+			return id, true
+		}
+	}
+
+	return 0, false
 }
 
 func writeCMSJSON(w http.ResponseWriter, status int, payload any) {

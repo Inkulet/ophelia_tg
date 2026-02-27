@@ -1,12 +1,14 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -73,6 +75,12 @@ func Run() {
 	womanManager = NewWomanManager(dbFilePath)
 	log.Println("✅ База данных женщин (SQLite) подключена.")
 
+	cmsRepo := NewPostgreSQLRepository(womanManager.DB)
+	if err := cmsRepo.InitPostgreSQL(context.Background()); err != nil {
+		log.Printf("⚠️ CMS schema init failed: %v", err)
+	}
+	cmsService := NewCMSService(cmsRepo)
+
 	// 6. Настройки бота
 	log.Println("🔄 Попытка подключения к Telegram API...")
 
@@ -104,11 +112,17 @@ func Run() {
 
 	// 8. Регистрация всех хендлеров (из handlers.go)
 	RegisterHandlers(b)
+	cmsService.RegisterBotHandlers(b)
 
 	// 9. Запуск Умного Планировщика (из scheduler.go)
 	// Он будет проверять настройки в БД и отправлять пост в нужное время
 	safeGo("scheduler", func() { StartScheduler(b, womanManager, config.TargetChatID) })
 	safeGo("housekeeping", startHousekeeping)
+	webAddr := os.Getenv("OPHELIA_WEB_ADDR")
+	if strings.TrimSpace(webAddr) == "" {
+		webAddr = defaultWebAddr
+	}
+	safeGo("web-server", func() { startWebServer(webAddr, cmsService) })
 	if addr := os.Getenv("OPHELIA_HEALTH_ADDR"); addr != "" {
 		safeGo("health-server", func() { startHealthServer(addr) })
 	}

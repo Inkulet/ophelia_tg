@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { map, Observable } from 'rxjs';
+import { map, Observable, throwError } from 'rxjs';
 import { Event, Post } from '../models/cms.model';
 
 type ApiPost = Partial<{
@@ -65,13 +65,16 @@ export class CmsService {
 
   registerForEvent(eventId: string): Observable<{ ok: boolean }> {
     const userId = this.resolveUserId();
-    const body: { event_id: string; user_id?: number } = { event_id: eventId };
-
-    let headers = new HttpHeaders();
-    if (userId !== null) {
-      body.user_id = userId;
-      headers = headers.set('X-User-ID', String(userId));
+    if (userId === null) {
+      return throwError(() => new Error('Не найден user_id. Откройте страницу из Telegram-бота.'));
     }
+
+    const body: { event_id: string; user_id: number } = {
+      event_id: eventId,
+      user_id: userId,
+    };
+
+    const headers = new HttpHeaders().set('X-User-ID', String(userId));
 
     return this.http.post<{ ok: boolean }>(
       `${this.apiBase}/cms/events/register`,
@@ -126,7 +129,7 @@ export class CmsService {
       return null;
     }
 
-    const keys = ['ophelia_user_id', 'telegram_user_id', 'user_id'];
+    const keys = ['ophelia_user_id', 'telegram_user_id', 'tg_user_id', 'user_id'];
     for (const key of keys) {
       const raw = localStorage.getItem(key);
       if (!raw) {

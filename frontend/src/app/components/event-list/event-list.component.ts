@@ -93,6 +93,9 @@ export class EventListComponent implements OnInit {
   }
 
   private extractError(err: unknown): string {
+    if (err instanceof Error && err.message.trim() !== '') {
+      return err.message;
+    }
     if (err instanceof HttpErrorResponse) {
       if (typeof err.error === 'object' && err.error && 'error' in err.error) {
         const value = err.error.error;
