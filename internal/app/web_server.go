@@ -13,7 +13,6 @@ import (
 
 const (
 	defaultWebAddr = ":8080"
-	frontendDist   = "frontend/dist/browser"
 )
 
 func startWebServer(addr string, cmsService *CMSService) {
@@ -51,7 +50,10 @@ func startWebServer(addr string, cmsService *CMSService) {
 		uploadsFS.ServeHTTP(w, r)
 	}))
 
-	handler := spaFallbackHandler(mux, frontendDist)
+	frontendRoot := resolveFrontendBuildRoot()
+	log.Printf("📦 Frontend root: %s", frontendRoot)
+
+	handler := spaFallbackHandler(mux, frontendRoot)
 
 	server := &http.Server{
 		Addr:              addr,
@@ -63,6 +65,49 @@ func startWebServer(addr string, cmsService *CMSService) {
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Printf("⚠️ Web server stopped: %v", err)
 	}
+}
+
+func resolveFrontendBuildRoot() string {
+	if custom := strings.TrimSpace(os.Getenv("OPHELIA_FRONTEND_DIST")); custom != "" {
+		if isDir(custom) {
+			return custom
+		}
+		log.Printf("⚠️ OPHELIA_FRONTEND_DIST does not exist or is not a directory: %s", custom)
+	}
+
+	relCandidates := []string{
+		"frontend/dist/ophelia/browser",
+		"frontend/dist/ophelia",
+		"frontend/dist/browser",
+		"frontend/dist",
+	}
+
+	bases := []string{"."}
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		bases = append(bases, exeDir)
+		bases = append(bases, filepath.Dir(exeDir))
+		bases = append(bases, filepath.Dir(filepath.Dir(exeDir)))
+	}
+
+	tried := make([]string, 0, len(bases)*len(relCandidates))
+	for _, base := range bases {
+		for _, rel := range relCandidates {
+			candidate := filepath.Clean(filepath.Join(base, rel))
+			tried = append(tried, candidate)
+			if isDir(candidate) {
+				return candidate
+			}
+		}
+	}
+
+	log.Printf("⚠️ Frontend build dir not found. Checked: %s", strings.Join(tried, ", "))
+	return filepath.Join(".", relCandidates[0])
+}
+
+func isDir(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && info.IsDir()
 }
 
 func requireValidUserID(next http.Handler) http.Handler {

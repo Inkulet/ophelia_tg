@@ -1,6 +1,6 @@
-import { CommonModule } from '@angular/common';
+import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit } from '@angular/core';
+import { Component, Inject, OnInit, PLATFORM_ID } from '@angular/core';
 import { Event } from '../../models/cms.model';
 import { CmsService } from '../../services/cms.service';
 
@@ -18,9 +18,16 @@ export class EventListComponent implements OnInit {
   actionState: Record<string, { success?: string; error?: string; loading: boolean }> =
     {};
 
-  constructor(private readonly cmsService: CmsService) {}
+  constructor(
+    private readonly cmsService: CmsService,
+    @Inject(PLATFORM_ID) private readonly platformId: object,
+  ) {}
 
   ngOnInit(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      this.loading = false;
+      return;
+    }
     this.loadEvents();
   }
 

@@ -1,5 +1,5 @@
-import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { CommonModule, isPlatformBrowser } from '@angular/common';
+import { Component, Inject, OnInit, PLATFORM_ID } from '@angular/core';
 import { Post } from '../../models/cms.model';
 import { CmsService } from '../../services/cms.service';
 
@@ -15,9 +15,17 @@ export class PostListComponent implements OnInit {
   loading = true;
   error = '';
 
-  constructor(private readonly cmsService: CmsService) {}
+  constructor(
+    private readonly cmsService: CmsService,
+    @Inject(PLATFORM_ID) private readonly platformId: object,
+  ) {}
 
   ngOnInit(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      this.loading = false;
+      return;
+    }
+
     this.cmsService.getPosts().subscribe({
       next: (posts) => {
         this.posts = posts;
