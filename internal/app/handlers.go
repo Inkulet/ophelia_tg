@@ -198,25 +198,20 @@ var (
 
 // Маршруты callback-данных для нового иерархического UI.
 const (
-	cbMainMenu           = "ui_main"
-	cbMainSite           = "ui_main_site"
-	cbMainFun            = "ui_main_fun"
-	cbMainAdmin          = "ui_main_admin"
-	cbBackToMain         = "ui_back_main"
-	cbSiteHome           = "ui_site_home"
-	cbSiteAbout          = "ui_site_about"
-	cbSiteProjects       = "ui_site_projects"
-	cbSiteSkills         = "ui_site_skills"
-	cbSiteContacts       = "ui_site_contacts"
-	cbFunRandom          = "ui_fun_random"
-	cbFunSelection       = "ui_fun_selection"
-	cbFunAchievements    = "ui_fun_achievements"
-	cbFunRecommendations = "ui_fun_recommendations"
-	cbFunDaily           = "ui_fun_daily"
-	cbAdminEvents        = "ui_admin_events"
-	cbAdminCMS           = "ui_admin_cms"
-	cbAdminLogs          = "ui_admin_logs"
-	cbAdminModeration    = "ui_admin_moderation"
+	cbMainMenu     = "ui_main"
+	cbMainSite     = "ui_main_site"
+	cbMainFun      = "ui_main_fun"
+	cbMainAdmin    = "ui_main_admin"
+	cbBackToMain   = "ui_back_main"
+	cbSiteHome     = "ui_site_home"
+	cbSiteAbout    = "ui_site_about"
+	cbSiteProjects = "ui_site_projects"
+	cbSiteSkills   = "ui_site_skills"
+	cbSiteContacts = "ui_site_contacts"
+	cbFunWoman     = "ui_fun_woman"
+	cbFunStats     = "ui_fun_stats"
+	cbAdminEvents  = "ui_admin_events"
+	cbAdminLogs    = "ui_admin_logs"
 )
 
 // КОНСТАНТЫ СОСТОЯНИЙ
@@ -383,7 +378,7 @@ func InitMenus() {
 	)
 }
 
-func buildMainInlineMenu(userID int64) *tele.ReplyMarkup {
+func buildMainMenu(userID int64) *tele.ReplyMarkup {
 	m := &tele.ReplyMarkup{}
 	btnSite := m.Data("Сайт", cbMainSite)
 	btnFun := m.Data("Развлечения", cbMainFun)
@@ -391,14 +386,14 @@ func buildMainInlineMenu(userID int64) *tele.ReplyMarkup {
 		m.Row(btnSite, btnFun),
 	}
 	if isAdmin(userID) {
-		btnAdmin := m.Data("Админ-панель", cbMainAdmin)
+		btnAdmin := m.Data("Админка", cbMainAdmin)
 		rows = append(rows, m.Row(btnAdmin))
 	}
 	m.Inline(rows...)
 	return m
 }
 
-func buildSiteInlineMenu() *tele.ReplyMarkup {
+func buildSiteMenu() *tele.ReplyMarkup {
 	siteInlineMenu = &tele.ReplyMarkup{}
 	btnHome := siteInlineMenu.Data("Главная", cbSiteHome)
 	btnAbout := siteInlineMenu.Data("О себе", cbSiteAbout)
@@ -415,33 +410,25 @@ func buildSiteInlineMenu() *tele.ReplyMarkup {
 	return siteInlineMenu
 }
 
-func buildFunInlineMenu() *tele.ReplyMarkup {
+func buildFunMenu() *tele.ReplyMarkup {
 	funInlineMenu = &tele.ReplyMarkup{}
-	btnRandom := funInlineMenu.Data("Картинка с женщиной", cbFunRandom)
-	btnSelection := funInlineMenu.Data("Подборка дня", cbFunSelection)
-	btnAchievements := funInlineMenu.Data("Достижения", cbFunAchievements)
-	btnRecs := funInlineMenu.Data("Рекомендации", cbFunRecommendations)
-	btnDaily := funInlineMenu.Data("Ежедневник", cbFunDaily)
+	btnWoman := funInlineMenu.Data("Женщина", cbFunWoman)
+	btnStats := funInlineMenu.Data("Статистика", cbFunStats)
 	btnBack := funInlineMenu.Data("🔙 Назад", cbBackToMain)
 	funInlineMenu.Inline(
-		funInlineMenu.Row(btnRandom, btnSelection),
-		funInlineMenu.Row(btnAchievements, btnRecs),
-		funInlineMenu.Row(btnDaily),
+		funInlineMenu.Row(btnWoman, btnStats),
 		funInlineMenu.Row(btnBack),
 	)
 	return funInlineMenu
 }
 
-func buildAdminInlineMenu() *tele.ReplyMarkup {
+func buildAdminMenu() *tele.ReplyMarkup {
 	m := &tele.ReplyMarkup{}
-	btnEvents := m.Data("Мероприятия", cbAdminEvents)
-	btnCMS := m.Data("CMS", cbAdminCMS)
 	btnLogs := m.Data("Логи", cbAdminLogs)
-	btnModeration := m.Data("Модерация", cbAdminModeration)
+	btnEvents := m.Data("Мероприятия", cbAdminEvents)
 	btnBack := m.Data("🔙 Назад", cbBackToMain)
 	m.Inline(
-		m.Row(btnEvents, btnCMS),
-		m.Row(btnLogs, btnModeration),
+		m.Row(btnLogs, btnEvents),
 		m.Row(btnBack),
 	)
 	return m
@@ -454,9 +441,9 @@ func showMainInlineMenu(c tele.Context, edit bool) error {
 	}
 	msg := "Выберите раздел:"
 	if edit {
-		return tryEdit(c, msg, buildMainInlineMenu(userID), tele.ModeHTML)
+		return tryEdit(c, msg, buildMainMenu(userID), tele.ModeHTML)
 	}
-	return c.Send(msg, buildMainInlineMenu(userID), tele.ModeHTML)
+	return c.Send(msg, buildMainMenu(userID), tele.ModeHTML)
 }
 
 func RegisterHandlers(b *tele.Bot) {
@@ -508,6 +495,10 @@ func RegisterHandlers(b *tele.Bot) {
 	b.Handle("/report_time", HandleReportTime)
 	b.Handle("/report_day", HandleReportDay)
 	b.Handle("/inbox", HandleInbox)
+	b.Handle("/cms_post", HandleCMSPostCommand)
+	b.Handle("/event_manage", HandleCMSEventManageCommand)
+	b.Handle("/cms_event_add", HandleCMSEventAddCommand)
+	b.Handle("/cms_post_del", HandleCMSPostDelCommand)
 
 	// Команды пользователя
 	b.Handle("/me", HandleMe)
@@ -740,88 +731,46 @@ func processCallback(c tele.Context) error {
 	case cbMainMenu, cbBackToMain:
 		return showMainInlineMenu(c, true)
 	case cbMainSite:
-		return tryEdit(c, "Раздел сайта. Выберите страницу:", buildSiteInlineMenu(), tele.ModeHTML)
+		return tryEdit(c, "Раздел сайта. Выберите страницу:", buildSiteMenu(), tele.ModeHTML)
 	case cbMainFun:
-		return tryEdit(c, "Раздел развлечений. Выберите действие:", buildFunInlineMenu(), tele.ModeHTML)
+		return tryEdit(c, "Раздел развлечений. Выберите действие:", buildFunMenu(), tele.ModeHTML)
 	case cbMainAdmin:
 		if !isAdmin(userID) {
-			return tryEdit(c, "Доступ к админ-панели закрыт.", buildMainInlineMenu(userID), tele.ModeHTML)
+			return tryEdit(c, "Доступ к админке закрыт.", buildMainMenu(userID), tele.ModeHTML)
 		}
-		return tryEdit(c, "Админ-панель. Выберите раздел:", buildAdminInlineMenu(), tele.ModeHTML)
+		return tryEdit(c, "Админка. Выберите раздел:", buildAdminMenu(), tele.ModeHTML)
 	case cbSiteHome:
-		return tryEdit(c, "Главная: новости и события доступны на сайте.", buildSiteInlineMenu(), tele.ModeHTML)
+		return tryEdit(c, "Главная: новости и события доступны на сайте.", buildSiteMenu(), tele.ModeHTML)
 	case cbSiteAbout:
-		return tryEdit(c, "О себе: Офелия ведет архив биографий и образовательные подборки.", buildSiteInlineMenu(), tele.ModeHTML)
+		return tryEdit(c, "О себе: Офелия ведет архив биографий и образовательные подборки.", buildSiteMenu(), tele.ModeHTML)
 	case cbSiteProjects:
-		return tryEdit(c, "Проекты: летопись, викторины, подборки, CMS и события.", buildSiteInlineMenu(), tele.ModeHTML)
+		return tryEdit(c, "Проекты: летопись, викторины, подборки, CMS и события.", buildSiteMenu(), tele.ModeHTML)
 	case cbSiteSkills:
-		return tryEdit(c, "Навыки: поиск по тегам, эпохам, векам и персональные рекомендации.", buildSiteInlineMenu(), tele.ModeHTML)
+		return tryEdit(c, "Навыки: поиск по тегам, эпохам, векам и персональные рекомендации.", buildSiteMenu(), tele.ModeHTML)
 	case cbSiteContacts:
-		return tryEdit(c, "Контакты: используйте /help и админ-команды для связи и модерации.", buildSiteInlineMenu(), tele.ModeHTML)
-	case cbFunRandom:
-		if err := HandleRandomWoman(c); err != nil {
-			return err
+		return tryEdit(c, "Контакты: используйте /help и команды бота для связи и модерации.", buildSiteMenu(), tele.ModeHTML)
+	case cbFunWoman:
+		w := womanManager.GetRandomWoman()
+		if w == nil {
+			return tryEdit(c, "Архив пока пуст.", buildFunMenu(), tele.ModeHTML)
 		}
-		return tryEdit(c, "Случайная карточка отправлена. Можно выбрать следующее действие:", buildFunInlineMenu(), tele.ModeHTML)
-	case cbFunSelection:
-		if err := HandleSelection(c); err != nil {
-			return err
-		}
-		return tryEdit(c, "Подборка отправлена. Можно продолжить:", buildFunInlineMenu(), tele.ModeHTML)
-	case cbFunAchievements:
+		preview := fmt.Sprintf("👤 <b>%s</b>\n📚 %s\n🕰 %s\n\nИспользуйте /random для полной карточки с медиа.", html.EscapeString(w.Name), html.EscapeString(w.Field), html.EscapeString(w.Year))
+		return tryEdit(c, preview, buildFunMenu(), tele.ModeHTML)
+	case cbFunStats:
 		if c.Sender() == nil {
 			return nil
 		}
-		return tryEdit(c, buildUserStatsText(c.Sender().ID), buildFunInlineMenu(), tele.ModeHTML)
-	case cbFunRecommendations:
-		if err := HandleRecommendations(c); err != nil {
-			return err
-		}
-		return tryEdit(c, "Рекомендации отправлены. Выберите следующее действие:", buildFunInlineMenu(), tele.ModeHTML)
-	case cbFunDaily:
-		if c.Sender() == nil {
-			return nil
-		}
-		sub, err := womanManager.GetSubscription(c.Sender().ID)
-		if err != nil || sub == nil {
-			return tryEdit(c, "Ежедневник выключен. Включить: /daily_on", buildFunInlineMenu(), tele.ModeHTML)
-		}
-		state := "выключен"
-		if sub.IsActive {
-			state = "включен"
-		}
-		return tryEdit(c, fmt.Sprintf("Ежедневник %s. Время: %s", state, sub.Time), buildFunInlineMenu(), tele.ModeHTML)
+		return tryEdit(c, buildUserStatsText(c.Sender().ID), buildFunMenu(), tele.ModeHTML)
 	case cbAdminEvents:
 		if !isAdmin(userID) {
-			return tryEdit(c, "Недостаточно прав.", buildMainInlineMenu(userID), tele.ModeHTML)
+			return tryEdit(c, "Недостаточно прав.", buildMainMenu(userID), tele.ModeHTML)
 		}
-		return tryEdit(c, "Управление мероприятиями:\n/event_manage — список и участники.\n/cms_post — публикация поста.", buildAdminInlineMenu(), tele.ModeHTML)
-	case cbAdminCMS:
-		if !isAdmin(userID) {
-			return tryEdit(c, "Недостаточно прав.", buildMainInlineMenu(userID), tele.ModeHTML)
-		}
-		return tryEdit(c, "Управление CMS:\n/cms_post <title> | <content>\nПоддерживаются jpg/png/mp4.", buildAdminInlineMenu(), tele.ModeHTML)
+		return tryEdit(c, "Управление мероприятиями:\n/event_manage — список и участники\n/cms_event_add — добавить событие", buildAdminMenu(), tele.ModeHTML)
 	case cbAdminLogs:
 		if !isAdmin(userID) {
-			return tryEdit(c, "Недостаточно прав.", buildMainInlineMenu(userID), tele.ModeHTML)
+			return tryEdit(c, "Недостаточно прав.", buildMainMenu(userID), tele.ModeHTML)
 		}
-		return tryEdit(c, "Логи и диагностика:\n/status, /audit, /history, /broadcasts", buildAdminInlineMenu(), tele.ModeHTML)
-	case cbAdminModeration:
-		if !isAdmin(userID) {
-			return tryEdit(c, "Недостаточно прав.", buildMainInlineMenu(userID), tele.ModeHTML)
-		}
-		// Маршрутизация в существующие callback-разделы модерации.
-		modMenu := &tele.ReplyMarkup{}
-		btnWords := modMenu.Data("Цензура", "manage_words")
-		btnWhitelist := modMenu.Data("Белый список", "admin_whitelist")
-		btnChats := modMenu.Data("Чаты", "admin_chats")
-		btnBack := modMenu.Data("🔙 Назад", cbMainAdmin)
-		modMenu.Inline(
-			modMenu.Row(btnWords, btnWhitelist),
-			modMenu.Row(btnChats),
-			modMenu.Row(btnBack),
-		)
-		return tryEdit(c, "Модерация: выберите нужный раздел.", modMenu, tele.ModeHTML)
+		return tryEdit(c, "Логи и диагностика:\n/status, /audit, /history, /broadcasts", buildAdminMenu(), tele.ModeHTML)
 	}
 
 	// --- ВЫБОР СФЕРЫ (КАТЕГОРИИ) ---
@@ -907,7 +856,7 @@ func processCallback(c tele.Context) error {
 	}
 	if data == "manage_words" {
 		if !isAdmin(userID) {
-			return tryEdit(c, "Недостаточно прав.", buildMainInlineMenu(userID), tele.ModeHTML)
+			return tryEdit(c, "Недостаточно прав.", buildMainMenu(userID), tele.ModeHTML)
 		}
 		return tryEdit(c, "Редактирование запретов", wordsInlineMenu, tele.ModeHTML)
 	}
@@ -1288,7 +1237,7 @@ func processCallback(c tele.Context) error {
 
 	if data == "cancel_suggest" {
 		setAdminState(userID, STATE_IDLE)
-		return tryEdit(c, "Действие отменено.", buildMainInlineMenu(userID), tele.ModeHTML)
+		return tryEdit(c, "Действие отменено.", buildMainMenu(userID), tele.ModeHTML)
 	}
 
 	// --- USER CATEGORY SELECT ---
@@ -1570,6 +1519,18 @@ func extractID(text string) int64 {
 	return id
 }
 
+func normalizeBotCommand(text string) string {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) == 0 {
+		return ""
+	}
+	cmd := strings.TrimPrefix(fields[0], "/")
+	if i := strings.Index(cmd, "@"); i >= 0 {
+		cmd = cmd[:i]
+	}
+	return strings.ToLower(strings.TrimSpace(cmd))
+}
+
 func normalizeNameForDup(name string) string {
 	name = strings.ToLower(name)
 	name = splitRegex.ReplaceAllString(name, " ")
@@ -1715,16 +1676,73 @@ func HandleStart(c tele.Context) error {
 		if isAdmin(c.Sender().ID) {
 			welcomeText += "\n\nДля расширенных административных действий используйте /admin."
 		}
-		return c.Send(welcomeText, buildMainInlineMenu(c.Sender().ID), tele.ModeHTML)
+		return c.Send(welcomeText, buildMainMenu(c.Sender().ID), tele.ModeHTML)
 	}
 	return c.Send("Приветствую, путник. Используйте /start в личном чате для меню.", tele.ModeHTML)
 }
 func HandleHelp(c tele.Context) error {
-	if isAdmin(c.Sender().ID) {
-		return c.Send("/admin - Доступ к панели\n/status - Диагностика\n/audit - Аудит базы\n/broadcasts - История рассылок\n/export - Экспорт CSV\n/merge - Слияние записей\n/tagadd - Массовое добавление тегов\n/tagremove - Массовое удаление тегов\n/mediacheck - Проверка media_id\n/history - История изменений\n/tagsuggest - Подсказки тегов\n/inbox - Очередь предложений\n/dups - Дубликаты\n/quality - Качество карточек\n/topcards - Топ карточек\n/modadd /moddel /modlist /modlog - Роли\n/whitelist /wladd /wldel - Белый список\n/chats - Чаты бота\n/coladd /coldel /collist /colpub /colunpub - Коллекции\n/theme_on /theme_off /theme_time /theme_day\n/health_on /health_off /health_time\n/report_on /report_off /report_time /report_day\n/reload - Перезагрузка списков\n/verify - Подтвердить пользователя\n/unverify - Отозвать доступ\n/stopgame - Завершить испытание\n/sendinfo - Рассылка", tele.ModeHTML)
+	if c.Sender() == nil {
+		return nil
 	}
-	userHelp := "Архив имен - Записи по разделам.\n/random - Случайная запись.\n/selection - Подборка дня.\n/theme - Тема недели.\n/era - Эпохи.\n/century - Века.\n/tags - Теги.\n/browse - Навигация эпоха→сфера→тег.\n/collections - Коллекции.\n/fav - Избранное.\n/rec - Рекомендации.\n/daily_on /daily_off /daily_time - Ежедневник.\n/search - Поиск (пример: field:\"точные науки\" year:1800-1900 tag:математика).\nВнести предложение - Предложить новую запись.\nЛичное дело - Ваши достижения."
-	return c.Send(userHelp, tele.ModeHTML)
+
+	userHelp := "Команды пользователя:\n" +
+		"/start — открыть главное меню\n" +
+		"/help — справка\n" +
+		"/random — случайная запись\n" +
+		"/selection — подборка дня\n" +
+		"/theme — тема недели\n" +
+		"/era, /century — навигация по времени\n" +
+		"/tags, /browse — навигация по тегам\n" +
+		"/collections — опубликованные коллекции\n" +
+		"/fav, /rec — избранное и рекомендации\n" +
+		"/daily_on, /daily_off, /daily_time — ежедневник\n\n" +
+		"Меню:\n" +
+		"Главное: Сайт, Развлечения\n" +
+		"Сайт: Главная, О себе, Проекты, Навыки, Контакты\n" +
+		"Развлечения: Женщина, Статистика"
+
+	if !isAdmin(c.Sender().ID) {
+		return c.Send(userHelp, tele.ModeHTML)
+	}
+
+	adminHelp := userHelp + "\n\nАдмин-команды:\n" +
+		"/admin — панель управления\n" +
+		"/status, /audit, /history, /broadcasts — диагностика и отчеты\n" +
+		"/whitelist, /whitelist_del — белый список\n" +
+		"/cms_post — создать пост\n" +
+		"/cms_post_del — удалить пост\n" +
+		"/cms_event_add — добавить мероприятие\n" +
+		"/event_manage — управление записями мероприятия"
+
+	return c.Send(adminHelp, tele.ModeHTML)
+}
+
+func HandleCMSPostCommand(c tele.Context) error {
+	if cmsService == nil {
+		return c.Send("CMS-репозиторий не инициализирован.", tele.ModeHTML)
+	}
+	return cmsService.HandleBotCreatePost(c)
+}
+
+func HandleCMSEventManageCommand(c tele.Context) error {
+	if cmsService == nil {
+		return c.Send("CMS-репозиторий не инициализирован.", tele.ModeHTML)
+	}
+	return cmsService.HandleBotEventManage(c)
+}
+
+func HandleCMSEventAddCommand(c tele.Context) error {
+	if cmsService == nil {
+		return c.Send("CMS-репозиторий не инициализирован.", tele.ModeHTML)
+	}
+	return cmsService.HandleBotEventAdd(c)
+}
+
+func HandleCMSPostDelCommand(c tele.Context) error {
+	if cmsService == nil {
+		return c.Send("CMS-репозиторий не инициализирован.", tele.ModeHTML)
+	}
+	return cmsService.HandleBotPostDelete(c)
 }
 func HandleAdminPanel(c tele.Context) error {
 	if c.Chat() == nil || c.Sender() == nil {
@@ -1854,11 +1872,11 @@ func HandleWhitelistDel(c tele.Context) error {
 	}
 	args := c.Args()
 	if len(args) != 1 {
-		return c.Reply("Используйте: /wldel <code>&lt;chat_id&gt;</code>", tele.ModeHTML)
+		return c.Reply("Используйте: /whitelist_del <code>&lt;chat_id&gt;</code> (или /wldel <chat_id>)", tele.ModeHTML)
 	}
-	id, _ := strconv.ParseInt(args[0], 10, 64)
+	id := extractID(args[0])
 	if id == 0 {
-		return c.Reply("Неверный идентификатор.", tele.ModeHTML)
+		return c.Reply("Неверный идентификатор для удаления из whitelist.json.", tele.ModeHTML)
 	}
 	if removeWhitelist(id) {
 		_ = saveWhitelist()
@@ -3028,6 +3046,26 @@ func HandleText(c tele.Context) error {
 	if chat == nil {
 		return nil
 	}
+
+	// Единый command-router в стиле switch update.Message.Command():
+	// важно завершать обработку через return, чтобы не было дублей.
+	if strings.HasPrefix(strings.TrimSpace(text), "/") {
+		switch normalizeBotCommand(text) {
+		case "help":
+			return HandleHelp(c)
+		case "cms_post":
+			return HandleCMSPostCommand(c)
+		case "event_manage":
+			return HandleCMSEventManageCommand(c)
+		case "cms_event_add":
+			return HandleCMSEventAddCommand(c)
+		case "cms_post_del":
+			return HandleCMSPostDelCommand(c)
+		case "whitelist_del":
+			return HandleWhitelistDel(c)
+		}
+	}
+
 	if chat.Type == tele.ChatPrivate {
 		currentState := getAdminState(user.ID)
 		if isAdmin(user.ID) {
@@ -4372,6 +4410,14 @@ func sendFieldSelection(c tele.Context, field string, more bool) error {
 	if c.Chat() == nil {
 		return nil
 	}
+	if strings.HasPrefix(field, "page_") {
+		pstr := strings.TrimPrefix(field, "page_")
+		p, _ := strconv.Atoi(pstr)
+		if p < 0 {
+			p = 0
+		}
+		return sendUserFieldsPage(c, p, true)
+	}
 	if field == "random" {
 		w := womanManager.GetRandomWoman()
 		if w == nil {
@@ -4397,20 +4443,39 @@ func sendFieldSelection(c tele.Context, field string, more bool) error {
 	return c.Send("Продолжить или вернуться?", menu, tele.ModeHTML)
 }
 
-func HandleUserWoman(c tele.Context) error {
+func sendUserFieldsPage(c tele.Context, page int, edit bool) error {
 	fields := womanManager.GetUniqueFields()
 	if len(fields) == 0 {
-		return c.Reply("Архив пока пуст.")
+		if edit {
+			return tryEdit(c, "Архив пока пуст.", tele.ModeHTML)
+		}
+		return c.Reply("Архив пока пуст.", tele.ModeHTML)
 	}
+	pageSize := 8
+	totalPages := (len(fields) + pageSize - 1) / pageSize
+	if page < 0 {
+		page = 0
+	}
+	if page >= totalPages {
+		page = totalPages - 1
+	}
+	start := page * pageSize
+	end := start + pageSize
+	if end > len(fields) {
+		end = len(fields)
+	}
+
 	menu := &tele.ReplyMarkup{}
 	var rows []tele.Row
 	rows = append(rows, menu.Row(menu.Data("Случайный выбор", "field_random")))
+
 	var currentRow []tele.Btn
-	for i, field := range fields {
+	for i, field := range fields[start:end] {
+		idx := start + i
 		cleanField := strings.TrimSpace(field)
 		btn := menu.Data(cleanField, "field_"+cleanField)
 		currentRow = append(currentRow, btn)
-		if (i+1)%2 == 0 {
+		if (idx+1)%2 == 0 {
 			rows = append(rows, menu.Row(currentRow...))
 			currentRow = []tele.Btn{}
 		}
@@ -4418,6 +4483,29 @@ func HandleUserWoman(c tele.Context) error {
 	if len(currentRow) > 0 {
 		rows = append(rows, menu.Row(currentRow...))
 	}
+
+	var nav []tele.Btn
+	if page > 0 {
+		nav = append(nav, menu.Data("⬅️ Назад", fmt.Sprintf("field_page_%d", page-1)))
+	}
+	if page < totalPages-1 {
+		nav = append(nav, menu.Data("Вперед ➡️", fmt.Sprintf("field_page_%d", page+1)))
+	}
+	if len(nav) > 0 {
+		rows = append(rows, menu.Row(nav...))
+	}
+
 	menu.Inline(rows...)
-	return c.Reply("Выберите интересующую сферу:", menu, tele.ModeHTML)
+	msg := fmt.Sprintf("Выберите интересующую сферу (стр. %d/%d):", page+1, totalPages)
+	if edit {
+		return tryEdit(c, msg, menu, tele.ModeHTML)
+	}
+	return c.Reply(msg, menu, tele.ModeHTML)
+}
+
+func HandleUserWoman(c tele.Context) error {
+	if c.Callback() != nil {
+		return sendUserFieldsPage(c, 0, true)
+	}
+	return sendUserFieldsPage(c, 0, false)
 }

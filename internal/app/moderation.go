@@ -126,32 +126,45 @@ func checkNickname(user *tele.User) (bool, string) {
 	return false, ""
 }
 
-// containsBadWord разбивает текст на слова и ищет точное совпадение
+// containsBadWord ищет точное совпадение и (для длинных корней) вхождение.
+// Защита от ложных срабатываний: root-check только для слов длиной >= 4
+// и с ограничением на длину суффикса/префикса (до 4 символов).
 func containsBadWord(text string) bool {
-	// 1. Приводим к нижнему регистру
 	lowerText := strings.ToLower(text)
-
-	// 2. Заменяем все знаки препинания, скобки и смайлики на пробелы
-	// "Привет, я блогер!" -> "привет я блогер "
-	// "Читай мой блог." -> "читай мой блог "
 	cleanText := splitRegex.ReplaceAllString(lowerText, " ")
-
-	// 3. Разбиваем по пробелам на массив слов
 	messageWords := strings.Fields(cleanText)
 
 	wordsMu.RLock()
 	defer wordsMu.RUnlock()
 
-	// 4. Сравниваем каждое слово сообщения с каждым запрещенным словом
 	for _, msgWord := range messageWords {
+		msgWord = strings.TrimSpace(msgWord)
+		if msgWord == "" {
+			continue
+		}
+		msgLen := len([]rune(msgWord))
+
 		for _, badWord := range badWords {
-			if badWord == "" {
+			bw := strings.ToLower(strings.TrimSpace(badWord))
+			if bw == "" {
 				continue
 			}
-			// ТОЧНОЕ СРАВНЕНИЕ
-			// "блог" == "блог" -> TRUE
-			// "блогер" == "блог" -> FALSE
-			if msgWord == strings.ToLower(badWord) {
+			if msgWord == bw {
+				return true
+			}
+
+			// root-check только для более длинных запрещенных корней.
+			bwLen := len([]rune(bw))
+			if bwLen < 4 || msgLen < bwLen {
+				continue
+			}
+			if !strings.Contains(msgWord, bw) {
+				continue
+			}
+
+			// Защита от слишком далеких совпадений:
+			// допускаем морфологические хвосты/префиксы до 4 символов.
+			if msgLen-bwLen <= 4 {
 				return true
 			}
 		}

@@ -85,6 +85,8 @@ func (s *CMSService) RegisterBotHandlers(bot *tele.Bot) {
 	}
 	bot.Handle("/cms_post", s.HandleBotCreatePost)
 	bot.Handle("/event_manage", s.HandleBotEventManage)
+	bot.Handle("/cms_event_add", s.HandleBotEventAdd)
+	bot.Handle("/cms_post_del", s.HandleBotPostDelete)
 }
 
 // GetPosts returns only public posts for website.
@@ -291,6 +293,81 @@ func (s *CMSService) HandleBotEventManage(c tele.Context) error {
 		}
 	}
 	return c.Reply(sb.String())
+}
+
+// HandleBotEventAdd creates a CMS event from admin command.
+// Format: /cms_event_add <title> | <date> | <max_participants> | <description>
+func (s *CMSService) HandleBotEventAdd(c tele.Context) error {
+	if c.Sender() == nil || !isAdmin(c.Sender().ID) {
+		return c.Reply("Недостаточно прав.")
+	}
+	if s.repo == nil {
+		return c.Reply("CMS-репозиторий не инициализирован.")
+	}
+	msg := c.Message()
+	if msg == nil {
+		return c.Reply("Пустое сообщение.")
+	}
+
+	title, date, maxParticipants, description, err := parseBotEventPayload(msg)
+	if err != nil {
+		return c.Reply("Формат: /cms_event_add <title> | <date> | <max_participants> | <description>\nДата: 2006-01-02 15:04 или 02.01.2006 15:04")
+	}
+
+	mediaPath, err := s.saveTelegramMedia(c.Bot(), msg)
+	if err != nil {
+		return c.Reply("Ошибка сохранения медиа: " + err.Error())
+	}
+
+	event := &Event{
+		Title:               title,
+		Description:         description,
+		Date:                date,
+		MaxParticipants:     maxParticipants,
+		CurrentParticipants: make([]int64, 0),
+		MediaPath:           mediaPath,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := s.repo.CreateEvent(ctx, event); err != nil {
+		return c.Reply("Не удалось создать событие: " + err.Error())
+	}
+	return c.Reply(fmt.Sprintf("Событие создано. ID: %s", event.ID))
+}
+
+// HandleBotPostDelete deletes CMS post by ID (admin only).
+// Format: /cms_post_del <post_id>
+func (s *CMSService) HandleBotPostDelete(c tele.Context) error {
+	if c.Sender() == nil || !isAdmin(c.Sender().ID) {
+		return c.Reply("Недостаточно прав.")
+	}
+	if s.repo == nil {
+		return c.Reply("CMS-репозиторий не инициализирован.")
+	}
+	args := c.Args()
+	if len(args) < 1 {
+		return c.Reply("Используйте: /cms_post_del <post_id>")
+	}
+	postID := strings.TrimSpace(args[0])
+	if postID == "" {
+		return c.Reply("Укажите ID поста.")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	post, _ := s.repo.GetPostByID(ctx, postID)
+	if err := s.repo.DeletePost(ctx, postID); err != nil {
+		if errors.Is(err, ErrCMSNotFound) {
+			return c.Reply("Пост не найден.")
+		}
+		return c.Reply("Не удалось удалить пост: " + err.Error())
+	}
+	if post != nil {
+		s.removeLocalMedia(post.MediaPath)
+	}
+	return c.Reply("Пост удален.")
 }
 
 type createPostBody struct {
@@ -510,6 +587,72 @@ func parseBotPostPayload(msg *tele.Message) (string, string, error) {
 	return title, content, nil
 }
 
+func parseBotEventPayload(msg *tele.Message) (string, time.Time, int, string, error) {
+	if msg == nil {
+		return "", time.Time{}, 0, "", errors.New("empty message")
+	}
+	raw := strings.TrimSpace(msg.Payload)
+	if raw == "" {
+		raw = strings.TrimSpace(msg.Caption)
+	}
+	if raw == "" {
+		raw = strings.TrimSpace(msg.Text)
+		if strings.HasPrefix(raw, "/") {
+			parts := strings.Fields(raw)
+			if len(parts) > 0 {
+				raw = strings.TrimSpace(strings.TrimPrefix(raw, parts[0]))
+			}
+		}
+	}
+	if raw == "" {
+		return "", time.Time{}, 0, "", errors.New("empty payload")
+	}
+
+	parts := strings.SplitN(raw, "|", 4)
+	if len(parts) < 3 {
+		return "", time.Time{}, 0, "", errors.New("invalid payload")
+	}
+	title := strings.TrimSpace(parts[0])
+	dateRaw := strings.TrimSpace(parts[1])
+	maxRaw := strings.TrimSpace(parts[2])
+	description := ""
+	if len(parts) == 4 {
+		description = strings.TrimSpace(parts[3])
+	}
+	if title == "" || dateRaw == "" || maxRaw == "" {
+		return "", time.Time{}, 0, "", errors.New("title/date/max are required")
+	}
+
+	date, err := parseEventDate(dateRaw)
+	if err != nil {
+		return "", time.Time{}, 0, "", err
+	}
+	maxParticipants, err := strconv.Atoi(maxRaw)
+	if err != nil || maxParticipants < 0 {
+		return "", time.Time{}, 0, "", errors.New("invalid max_participants")
+	}
+	return title, date, maxParticipants, description, nil
+}
+
+func parseEventDate(raw string) (time.Time, error) {
+	layouts := []string{
+		time.RFC3339,
+		"2006-01-02 15:04",
+		"2006-01-02",
+		"02.01.2006 15:04",
+		"02.01.2006",
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, raw); err == nil {
+			if layout == "2006-01-02" || layout == "02.01.2006" {
+				return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local), nil
+			}
+			return t, nil
+		}
+	}
+	return time.Time{}, errors.New("invalid event date")
+}
+
 func (s *CMSService) saveMultipartMedia(src multipart.File, fileName string) (string, error) {
 	ext, err := allowedMediaExt(fileName)
 	if err != nil {
@@ -585,6 +728,19 @@ func (s *CMSService) saveTelegramMedia(bot *tele.Bot, msg *tele.Message) (string
 		return "", fmt.Errorf("download telegram file: %w", err)
 	}
 	return filepath.ToSlash(targetPath), nil
+}
+
+func (s *CMSService) removeLocalMedia(path string) {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return
+	}
+	clean := filepath.Clean(p)
+	baseUpload := filepath.Clean(s.uploadDir)
+	if clean != baseUpload && !strings.HasPrefix(clean, baseUpload+string(os.PathSeparator)) {
+		return
+	}
+	_ = os.Remove(clean)
 }
 
 func allowedMediaExt(fileName string) (string, error) {

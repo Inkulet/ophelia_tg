@@ -100,6 +100,7 @@ func NewWomanManager(file string) *WomanManager {
 		ModeratorsCache: make(map[int64]string),
 	}
 	wm.Connect()
+	wm.startDraftCleanupLoop()
 	return wm
 }
 
@@ -385,7 +386,13 @@ func (wm *WomanManager) UpdateSettings(s *BotSettings) error {
 func (wm *WomanManager) StartAdding(userID int64) {
 	wm.Mu.Lock()
 	defer wm.Mu.Unlock()
-	wm.Drafts[userID] = &Woman{MediaIDs: []string{}, Tags: []string{}, SuggestedBy: userID}
+	now := time.Now().UTC()
+	wm.Drafts[userID] = &Woman{
+		Model:       gorm.Model{CreatedAt: now, UpdatedAt: now},
+		MediaIDs:    []string{},
+		Tags:        []string{},
+		SuggestedBy: userID,
+	}
 }
 
 func (wm *WomanManager) GetDraft(userID int64) *Woman {
@@ -401,7 +408,47 @@ func (wm *WomanManager) WithDraft(userID int64, fn func(*Woman) error) error {
 	if !ok || draft == nil {
 		return fmt.Errorf("черновик не найден")
 	}
-	return fn(draft)
+	if err := fn(draft); err != nil {
+		return err
+	}
+	draft.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
+func (wm *WomanManager) startDraftCleanupLoop() {
+	safeGo("drafts-cleanup-loop", func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+
+		// Быстрый первый проход после запуска.
+		wm.cleanupStaleDrafts(24 * time.Hour)
+		for range ticker.C {
+			wm.cleanupStaleDrafts(24 * time.Hour)
+		}
+	})
+}
+
+func (wm *WomanManager) cleanupStaleDrafts(maxAge time.Duration) {
+	if maxAge <= 0 {
+		return
+	}
+	cutoff := time.Now().UTC().Add(-maxAge)
+
+	wm.Mu.Lock()
+	defer wm.Mu.Unlock()
+	for userID, draft := range wm.Drafts {
+		if draft == nil {
+			delete(wm.Drafts, userID)
+			continue
+		}
+		t := draft.UpdatedAt
+		if t.IsZero() {
+			t = draft.CreatedAt
+		}
+		if t.IsZero() || t.Before(cutoff) {
+			delete(wm.Drafts, userID)
+		}
+	}
 }
 
 func (wm *WomanManager) SaveDraft(userID int64, isPublished bool) error {
@@ -1010,6 +1057,112 @@ func cleanText(text string) string {
 	return strings.ReplaceAll(text, "<...>", "(...)")
 }
 
+func splitHTMLByParagraphs(text string, limit int) []string {
+	if limit <= 0 {
+		limit = 4000
+	}
+	raw := strings.ReplaceAll(text, "\r\n", "\n")
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	paragraphs := strings.Split(raw, "\n\n")
+	var chunks []string
+	var current string
+
+	pushCurrent := func() {
+		c := strings.TrimSpace(current)
+		if c != "" {
+			chunks = append(chunks, c)
+		}
+		current = ""
+	}
+
+	appendLong := func(segment string) {
+		s := strings.TrimSpace(segment)
+		if s == "" {
+			return
+		}
+		for len([]rune(s)) > limit {
+			cut := findSmartSplitPos([]rune(s), limit)
+			part := strings.TrimSpace(string([]rune(s)[:cut]))
+			if part != "" {
+				chunks = append(chunks, part)
+			}
+			s = strings.TrimSpace(string([]rune(s)[cut:]))
+		}
+		if s != "" {
+			if current == "" {
+				current = s
+			} else if len([]rune(current+"\n\n"+s)) <= limit {
+				current += "\n\n" + s
+			} else {
+				pushCurrent()
+				current = s
+			}
+		}
+	}
+
+	for _, p := range paragraphs {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if current == "" {
+			if len([]rune(p)) <= limit {
+				current = p
+			} else {
+				appendLong(p)
+			}
+			continue
+		}
+		combined := current + "\n\n" + p
+		if len([]rune(combined)) <= limit {
+			current = combined
+			continue
+		}
+		pushCurrent()
+		if len([]rune(p)) <= limit {
+			current = p
+		} else {
+			appendLong(p)
+		}
+	}
+
+	pushCurrent()
+	return chunks
+}
+
+func findSmartSplitPos(runes []rune, limit int) int {
+	if len(runes) <= limit {
+		return len(runes)
+	}
+	if limit <= 0 {
+		return len(runes)
+	}
+	if limit > len(runes) {
+		limit = len(runes)
+	}
+
+	for i := limit; i > 1; i-- {
+		if runes[i-1] == '\n' && runes[i-2] == '\n' {
+			return i - 2
+		}
+	}
+	for i := limit; i > 0; i-- {
+		if runes[i-1] == '\n' {
+			return i - 1
+		}
+	}
+	for i := limit; i > 0; i-- {
+		if runes[i-1] == ' ' {
+			return i - 1
+		}
+	}
+	return limit
+}
+
 // Главная функция отправки карточки
 func (wm *WomanManager) SendWomanCard(bot *tele.Bot, recipient tele.Recipient, w *Woman) error {
 	status := ""
@@ -1072,33 +1225,20 @@ func (wm *WomanManager) SendWomanCard(bot *tele.Bot, recipient tele.Recipient, w
 		}
 	}
 
-	// 2. Отправляем основной текст (Info) отдельно
-	// Здесь лимит 4096.
-	// Если текст ОЧЕНЬ длинный, просто режем по 4000 символов.
-	// ВАЖНО: Если резать HTML посередине, он сломается.
-	// Поэтому для длинных текстов, если они > 4096, лучше сразу слать Plain Text, чтобы не мучиться.
-
-	infoRunes := []rune(safeInfo)
-	if len(infoRunes) > 4000 {
-		// Слишком длинно для одного сообщения, шлем без тегов для надежности
-		for i := 0; i < len(infoRunes); i += 4000 {
-			end := i + 4000
-			if end > len(infoRunes) {
-				end = len(infoRunes)
-			}
-			chunk := string(infoRunes[i:end])
-			bot.Send(recipient, removeHTMLTags(chunk), tele.ModeDefault)
+	// 2. Отправляем основной текст (Info) отдельно:
+	// умная нарезка по абзацам/строкам с сохранением HTML-режима.
+	chunks := splitHTMLByParagraphs(safeInfo, 4000)
+	for _, chunk := range chunks {
+		_, err = bot.Send(recipient, chunk, tele.ModeHTML)
+		if err == nil {
+			continue
 		}
-		return nil
+		log.Printf("⚠️ Ошибка текста (Long chunk): %v. Пробую Plain Text.", err)
+		if _, plainErr := bot.Send(recipient, removeHTMLTags(chunk), tele.ModeDefault); plainErr != nil {
+			return plainErr
+		}
 	}
-
-	// Если текст нормальный (до 4096), шлем с HTML
-	_, err = bot.Send(recipient, safeInfo, tele.ModeHTML)
-	if err != nil {
-		log.Printf("⚠️ Ошибка текста (Long): %v. Пробую Plain Text.", err)
-		_, err = bot.Send(recipient, removeHTMLTags(safeInfo), tele.ModeDefault)
-	}
-	return err
+	return nil
 }
 
 // Универсальная отправка фото/альбома

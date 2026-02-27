@@ -35,6 +35,7 @@ var (
 	gameManager  *GameManager
 	statsManager *StatsManager
 	womanManager *WomanManager
+	cmsService   *CMSService
 )
 
 // ==========================================
@@ -79,7 +80,7 @@ func Run() {
 	if err := cmsRepo.InitPostgreSQL(context.Background()); err != nil {
 		log.Printf("⚠️ CMS schema init failed: %v", err)
 	}
-	cmsService := NewCMSService(cmsRepo)
+	cmsService = NewCMSService(cmsRepo)
 
 	// 6. Настройки бота
 	log.Println("🔄 Попытка подключения к Telegram API...")
@@ -112,7 +113,6 @@ func Run() {
 
 	// 8. Регистрация всех хендлеров (из handlers.go)
 	RegisterHandlers(b)
-	cmsService.RegisterBotHandlers(b)
 
 	// 9. Запуск Умного Планировщика (из scheduler.go)
 	// Он будет проверять настройки в БД и отправлять пост в нужное время
