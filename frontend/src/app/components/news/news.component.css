@@ -24,26 +24,33 @@
   color: #ffb3b3;
 }
 
-.contact-grid {
+.news-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1rem;
 }
 
-.contact-card {
+.news-card {
   border-radius: 12px;
   padding: 1rem;
   background: rgba(113, 112, 92, 0.2);
   border: 1px solid rgba(179, 173, 164, 0.2);
 }
 
-.contact-card h3 {
-  color: var(--platinum);
-  margin-bottom: 0.5rem;
+.news-card img {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 10px;
+  margin-bottom: 0.7rem;
 }
 
-.contact-card p,
-.contact-card a {
+.news-card p {
   color: var(--platinum);
-  opacity: 0.92;
+  white-space: pre-wrap;
+  margin-bottom: 0.65rem;
+}
+
+.news-card a {
+  color: #d7d2c8;
 }

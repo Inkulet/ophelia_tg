@@ -19,6 +19,8 @@ var (
 	ErrEventIsFull = errors.New("event has reached max participants")
 )
 
+const siteSettingsSingletonID = "site_settings"
+
 type Post struct {
 	ID        string    `json:"id" gorm:"type:text;primaryKey" bson:"_id,omitempty"`
 	Title     string    `json:"title" gorm:"size:255;not null" bson:"title"`
@@ -28,14 +30,37 @@ type Post struct {
 	IsHidden  bool      `json:"is_hidden" gorm:"default:false;index" bson:"is_hidden"`
 }
 
+type SiteSettings struct {
+	ID              string    `json:"id" gorm:"type:text;primaryKey" bson:"_id,omitempty"`
+	BackgroundURL   string    `json:"background_url" gorm:"type:text" bson:"background_url"`
+	AvatarURL       string    `json:"avatar_url" gorm:"type:text" bson:"avatar_url"`
+	HomeDescription string    `json:"home_description" gorm:"type:text" bson:"home_description"`
+	AboutText       string    `json:"about_text" gorm:"type:text" bson:"about_text"`
+	ContactEmail    string    `json:"contact_email" gorm:"type:text" bson:"contact_email"`
+	ContactPhone    string    `json:"contact_phone" gorm:"type:text" bson:"contact_phone"`
+	ContactLocation string    `json:"contact_location" gorm:"type:text" bson:"contact_location"`
+	UpdatedAt       time.Time `json:"updated_at" gorm:"autoUpdateTime" bson:"updated_at"`
+}
+
 type Event struct {
 	ID                  string    `json:"id" gorm:"type:text;primaryKey" bson:"_id,omitempty"`
 	Title               string    `json:"title" gorm:"size:255;not null" bson:"title"`
 	Description         string    `json:"description" gorm:"type:text" bson:"description"`
 	Date                time.Time `json:"date" gorm:"index;not null" bson:"date"`
+	Time                string    `json:"time" gorm:"size:32" bson:"time"`
+	Location            string    `json:"location" gorm:"type:text" bson:"location"`
 	MaxParticipants     int       `json:"max_participants" gorm:"not null;default:0" bson:"max_participants"`
 	CurrentParticipants []int64   `json:"current_participants" gorm:"serializer:json" bson:"current_participants"`
-	MediaPath           string    `json:"media_path" gorm:"type:text" bson:"media_path"`
+}
+
+type Project struct {
+	ID               string    `json:"id" gorm:"type:text;primaryKey" bson:"_id,omitempty"`
+	Title            string    `json:"title" gorm:"size:255;not null" bson:"title"`
+	ShortDescription string    `json:"short_description" gorm:"type:text" bson:"short_description"`
+	DetailedContent  string    `json:"detailed_content" gorm:"type:text" bson:"detailed_content"`
+	MediaURL         string    `json:"media_url" gorm:"type:text" bson:"media_url"`
+	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime" bson:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at" gorm:"autoUpdateTime" bson:"updated_at"`
 }
 
 type Repository interface {
@@ -47,6 +72,17 @@ type Repository interface {
 	ListPosts(ctx context.Context, includeHidden bool) ([]Post, error)
 	UpdatePost(ctx context.Context, post *Post) error
 	DeletePost(ctx context.Context, id string) error
+
+	CreateSiteSettings(ctx context.Context, settings *SiteSettings) error
+	GetSiteSettings(ctx context.Context) (*SiteSettings, error)
+	UpdateSiteSettings(ctx context.Context, settings *SiteSettings) error
+	DeleteSiteSettings(ctx context.Context) error
+
+	CreateProject(ctx context.Context, project *Project) error
+	GetProjectByID(ctx context.Context, id string) (*Project, error)
+	ListProjects(ctx context.Context) ([]Project, error)
+	UpdateProject(ctx context.Context, project *Project) error
+	DeleteProject(ctx context.Context, id string) error
 
 	CreateEvent(ctx context.Context, event *Event) error
 	GetEventByID(ctx context.Context, id string) (*Event, error)
@@ -71,15 +107,24 @@ func (r *PostgreSQLRepository) InitPostgreSQL(ctx context.Context) error {
 	}
 
 	db := r.db.WithContext(ctx)
-	if err := db.AutoMigrate(&Post{}, &Event{}); err != nil {
+	if err := db.AutoMigrate(&Post{}, &SiteSettings{}, &Project{}, &Event{}); err != nil {
 		return fmt.Errorf("auto migrate cms models: %w", err)
 	}
 
 	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC)").Error; err != nil {
 		return fmt.Errorf("create posts index: %w", err)
 	}
+	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_projects_created_at ON projects(created_at DESC)").Error; err != nil {
+		return fmt.Errorf("create projects index: %w", err)
+	}
 	if err := db.Exec("CREATE INDEX IF NOT EXISTS idx_events_date ON events(date)").Error; err != nil {
 		return fmt.Errorf("create events index: %w", err)
+	}
+
+	settings := &SiteSettings{ID: siteSettingsSingletonID}
+	ensureSiteSettingsDefaults(settings)
+	if err := db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true}).Create(settings).Error; err != nil {
+		return fmt.Errorf("init site settings singleton: %w", err)
 	}
 
 	return nil
@@ -155,6 +200,126 @@ func (r *PostgreSQLRepository) DeletePost(ctx context.Context, id string) error 
 	return nil
 }
 
+func (r *PostgreSQLRepository) CreateSiteSettings(ctx context.Context, settings *SiteSettings) error {
+	if settings == nil {
+		return errors.New("site settings is nil")
+	}
+	ensureSiteSettingsDefaults(settings)
+	res := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"background_url", "avatar_url", "home_description", "about_text", "contact_email", "contact_phone", "contact_location", "updated_at"}),
+	}).Create(settings)
+	return res.Error
+}
+
+func (r *PostgreSQLRepository) GetSiteSettings(ctx context.Context) (*SiteSettings, error) {
+	var settings SiteSettings
+	if err := r.db.WithContext(ctx).First(&settings, "id = ?", siteSettingsSingletonID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrCMSNotFound
+		}
+		return nil, err
+	}
+	return &settings, nil
+}
+
+func (r *PostgreSQLRepository) UpdateSiteSettings(ctx context.Context, settings *SiteSettings) error {
+	if settings == nil {
+		return errors.New("site settings is nil")
+	}
+	ensureSiteSettingsDefaults(settings)
+	res := r.db.WithContext(ctx).Model(&SiteSettings{}).Where("id = ?", siteSettingsSingletonID).Updates(map[string]any{
+		"background_url":   settings.BackgroundURL,
+		"avatar_url":       settings.AvatarURL,
+		"home_description": settings.HomeDescription,
+		"about_text":       settings.AboutText,
+		"contact_email":    settings.ContactEmail,
+		"contact_phone":    settings.ContactPhone,
+		"contact_location": settings.ContactLocation,
+		"updated_at":       settings.UpdatedAt,
+	})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return r.CreateSiteSettings(ctx, settings)
+	}
+	return nil
+}
+
+func (r *PostgreSQLRepository) DeleteSiteSettings(ctx context.Context) error {
+	res := r.db.WithContext(ctx).Delete(&SiteSettings{}, "id = ?", siteSettingsSingletonID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrCMSNotFound
+	}
+	return nil
+}
+
+func (r *PostgreSQLRepository) CreateProject(ctx context.Context, project *Project) error {
+	if project == nil {
+		return errors.New("project is nil")
+	}
+	ensureProjectDefaults(project)
+	return r.db.WithContext(ctx).Create(project).Error
+}
+
+func (r *PostgreSQLRepository) GetProjectByID(ctx context.Context, id string) (*Project, error) {
+	var project Project
+	if err := r.db.WithContext(ctx).First(&project, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrCMSNotFound
+		}
+		return nil, err
+	}
+	return &project, nil
+}
+
+func (r *PostgreSQLRepository) ListProjects(ctx context.Context) ([]Project, error) {
+	var projects []Project
+	if err := r.db.WithContext(ctx).Order("created_at DESC").Find(&projects).Error; err != nil {
+		return nil, err
+	}
+	return projects, nil
+}
+
+func (r *PostgreSQLRepository) UpdateProject(ctx context.Context, project *Project) error {
+	if project == nil {
+		return errors.New("project is nil")
+	}
+	if project.ID == "" {
+		return errors.New("project id is required")
+	}
+	project.UpdatedAt = time.Now().UTC()
+	res := r.db.WithContext(ctx).Model(&Project{}).Where("id = ?", project.ID).Updates(map[string]any{
+		"title":             project.Title,
+		"short_description": project.ShortDescription,
+		"detailed_content":  project.DetailedContent,
+		"media_url":         project.MediaURL,
+		"updated_at":        project.UpdatedAt,
+	})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrCMSNotFound
+	}
+	return nil
+}
+
+func (r *PostgreSQLRepository) DeleteProject(ctx context.Context, id string) error {
+	res := r.db.WithContext(ctx).Delete(&Project{}, "id = ?", id)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrCMSNotFound
+	}
+	return nil
+}
+
 func (r *PostgreSQLRepository) CreateEvent(ctx context.Context, event *Event) error {
 	if event == nil {
 		return errors.New("event is nil")
@@ -195,9 +360,10 @@ func (r *PostgreSQLRepository) UpdateEvent(ctx context.Context, event *Event) er
 		"title":                event.Title,
 		"description":          event.Description,
 		"date":                 event.Date,
+		"time":                 event.Time,
+		"location":             event.Location,
 		"max_participants":     event.MaxParticipants,
 		"current_participants": event.CurrentParticipants,
-		"media_path":           event.MediaPath,
 	})
 	if res.Error != nil {
 		return res.Error
@@ -259,15 +425,19 @@ func (r *PostgreSQLRepository) RemoveEventParticipant(ctx context.Context, event
 }
 
 type MongoRepository struct {
-	db     *mongo.Database
-	posts  *mongo.Collection
-	events *mongo.Collection
+	db       *mongo.Database
+	posts    *mongo.Collection
+	settings *mongo.Collection
+	projects *mongo.Collection
+	events   *mongo.Collection
 }
 
 func NewMongoRepository(db *mongo.Database) *MongoRepository {
 	repo := &MongoRepository{db: db}
 	if db != nil {
 		repo.posts = db.Collection("posts")
+		repo.settings = db.Collection("site_settings")
+		repo.projects = db.Collection("projects")
 		repo.events = db.Collection("events")
 	}
 	return repo
@@ -292,18 +462,18 @@ func (r *MongoRepository) InitMongoDB(ctx context.Context) error {
 		exists[name] = struct{}{}
 	}
 
-	if _, ok := exists["posts"]; !ok {
-		if err := r.db.CreateCollection(ctx, "posts"); err != nil {
-			return fmt.Errorf("create posts collection: %w", err)
+	for _, collName := range []string{"posts", "site_settings", "projects", "events"} {
+		if _, ok := exists[collName]; ok {
+			continue
 		}
-	}
-	if _, ok := exists["events"]; !ok {
-		if err := r.db.CreateCollection(ctx, "events"); err != nil {
-			return fmt.Errorf("create events collection: %w", err)
+		if err := r.db.CreateCollection(ctx, collName); err != nil {
+			return fmt.Errorf("create %s collection: %w", collName, err)
 		}
 	}
 
 	r.posts = r.db.Collection("posts")
+	r.settings = r.db.Collection("site_settings")
+	r.projects = r.db.Collection("projects")
 	r.events = r.db.Collection("events")
 
 	_, err = r.posts.Indexes().CreateMany(ctx, []mongo.IndexModel{
@@ -314,11 +484,22 @@ func (r *MongoRepository) InitMongoDB(ctx context.Context) error {
 		return fmt.Errorf("create posts indexes: %w", err)
 	}
 
-	_, err = r.events.Indexes().CreateMany(ctx, []mongo.IndexModel{
-		{Keys: bson.D{{Key: "date", Value: 1}}},
+	_, err = r.projects.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{Keys: bson.D{{Key: "created_at", Value: -1}}},
 	})
 	if err != nil {
+		return fmt.Errorf("create projects indexes: %w", err)
+	}
+
+	_, err = r.events.Indexes().CreateMany(ctx, []mongo.IndexModel{{Keys: bson.D{{Key: "date", Value: 1}}}})
+	if err != nil {
 		return fmt.Errorf("create events indexes: %w", err)
+	}
+
+	settings := &SiteSettings{ID: siteSettingsSingletonID}
+	ensureSiteSettingsDefaults(settings)
+	if err := r.CreateSiteSettings(ctx, settings); err != nil {
+		return fmt.Errorf("init settings singleton: %w", err)
 	}
 
 	return nil
@@ -406,6 +587,181 @@ func (r *MongoRepository) DeletePost(ctx context.Context, id string) error {
 	coll := r.postsCollection()
 	if coll == nil {
 		return errors.New("posts collection is not initialized")
+	}
+
+	res, err := coll.DeleteOne(ctx, bson.M{"_id": id})
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount == 0 {
+		return ErrCMSNotFound
+	}
+	return nil
+}
+
+func (r *MongoRepository) CreateSiteSettings(ctx context.Context, settings *SiteSettings) error {
+	if settings == nil {
+		return errors.New("site settings is nil")
+	}
+	ensureSiteSettingsDefaults(settings)
+
+	coll := r.settingsCollection()
+	if coll == nil {
+		return errors.New("settings collection is not initialized")
+	}
+
+	_, err := coll.ReplaceOne(
+		ctx,
+		bson.M{"_id": siteSettingsSingletonID},
+		settings,
+		options.Replace().SetUpsert(true),
+	)
+	return err
+}
+
+func (r *MongoRepository) GetSiteSettings(ctx context.Context) (*SiteSettings, error) {
+	coll := r.settingsCollection()
+	if coll == nil {
+		return nil, errors.New("settings collection is not initialized")
+	}
+
+	var settings SiteSettings
+	err := coll.FindOne(ctx, bson.M{"_id": siteSettingsSingletonID}).Decode(&settings)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrCMSNotFound
+		}
+		return nil, err
+	}
+	return &settings, nil
+}
+
+func (r *MongoRepository) UpdateSiteSettings(ctx context.Context, settings *SiteSettings) error {
+	if settings == nil {
+		return errors.New("site settings is nil")
+	}
+	ensureSiteSettingsDefaults(settings)
+
+	coll := r.settingsCollection()
+	if coll == nil {
+		return errors.New("settings collection is not initialized")
+	}
+
+	res, err := coll.UpdateByID(ctx, siteSettingsSingletonID, bson.M{
+		"$set": bson.M{
+			"background_url":   settings.BackgroundURL,
+			"avatar_url":       settings.AvatarURL,
+			"home_description": settings.HomeDescription,
+			"about_text":       settings.AboutText,
+			"contact_email":    settings.ContactEmail,
+			"contact_phone":    settings.ContactPhone,
+			"contact_location": settings.ContactLocation,
+			"updated_at":       settings.UpdatedAt,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return r.CreateSiteSettings(ctx, settings)
+	}
+	return nil
+}
+
+func (r *MongoRepository) DeleteSiteSettings(ctx context.Context) error {
+	coll := r.settingsCollection()
+	if coll == nil {
+		return errors.New("settings collection is not initialized")
+	}
+
+	res, err := coll.DeleteOne(ctx, bson.M{"_id": siteSettingsSingletonID})
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount == 0 {
+		return ErrCMSNotFound
+	}
+	return nil
+}
+
+func (r *MongoRepository) CreateProject(ctx context.Context, project *Project) error {
+	if project == nil {
+		return errors.New("project is nil")
+	}
+	ensureProjectDefaults(project)
+
+	coll := r.projectsCollection()
+	if coll == nil {
+		return errors.New("projects collection is not initialized")
+	}
+	_, err := coll.InsertOne(ctx, project)
+	return err
+}
+
+func (r *MongoRepository) GetProjectByID(ctx context.Context, id string) (*Project, error) {
+	coll := r.projectsCollection()
+	if coll == nil {
+		return nil, errors.New("projects collection is not initialized")
+	}
+
+	var project Project
+	err := coll.FindOne(ctx, bson.M{"_id": id}).Decode(&project)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrCMSNotFound
+		}
+		return nil, err
+	}
+	return &project, nil
+}
+
+func (r *MongoRepository) ListProjects(ctx context.Context) ([]Project, error) {
+	coll := r.projectsCollection()
+	if coll == nil {
+		return nil, errors.New("projects collection is not initialized")
+	}
+
+	cur, err := coll.Find(ctx, bson.M{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	var projects []Project
+	if err := cur.All(ctx, &projects); err != nil {
+		return nil, err
+	}
+	return projects, nil
+}
+
+func (r *MongoRepository) UpdateProject(ctx context.Context, project *Project) error {
+	if project == nil {
+		return errors.New("project is nil")
+	}
+	if project.ID == "" {
+		return errors.New("project id is required")
+	}
+	project.UpdatedAt = time.Now().UTC()
+
+	coll := r.projectsCollection()
+	if coll == nil {
+		return errors.New("projects collection is not initialized")
+	}
+
+	res, err := coll.ReplaceOne(ctx, bson.M{"_id": project.ID}, project)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return ErrCMSNotFound
+	}
+	return nil
+}
+
+func (r *MongoRepository) DeleteProject(ctx context.Context, id string) error {
+	coll := r.projectsCollection()
+	if coll == nil {
+		return errors.New("projects collection is not initialized")
 	}
 
 	res, err := coll.DeleteOne(ctx, bson.M{"_id": id})
@@ -525,9 +881,7 @@ func (r *MongoRepository) AddEventParticipant(ctx context.Context, eventID strin
 		return ErrEventIsFull
 	}
 
-	res, err := coll.UpdateByID(ctx, eventID, bson.M{
-		"$addToSet": bson.M{"current_participants": userID},
-	})
+	res, err := coll.UpdateByID(ctx, eventID, bson.M{"$addToSet": bson.M{"current_participants": userID}})
 	if err != nil {
 		return err
 	}
@@ -543,9 +897,7 @@ func (r *MongoRepository) RemoveEventParticipant(ctx context.Context, eventID st
 		return errors.New("events collection is not initialized")
 	}
 
-	res, err := coll.UpdateByID(ctx, eventID, bson.M{
-		"$pull": bson.M{"current_participants": userID},
-	})
+	res, err := coll.UpdateByID(ctx, eventID, bson.M{"$pull": bson.M{"current_participants": userID}})
 	if err != nil {
 		return err
 	}
@@ -564,6 +916,28 @@ func (r *MongoRepository) postsCollection() *mongo.Collection {
 	}
 	r.posts = r.db.Collection("posts")
 	return r.posts
+}
+
+func (r *MongoRepository) settingsCollection() *mongo.Collection {
+	if r.settings != nil {
+		return r.settings
+	}
+	if r.db == nil {
+		return nil
+	}
+	r.settings = r.db.Collection("site_settings")
+	return r.settings
+}
+
+func (r *MongoRepository) projectsCollection() *mongo.Collection {
+	if r.projects != nil {
+		return r.projects
+	}
+	if r.db == nil {
+		return nil
+	}
+	r.projects = r.db.Collection("projects")
+	return r.projects
 }
 
 func (r *MongoRepository) eventsCollection() *mongo.Collection {
@@ -586,12 +960,34 @@ func ensurePostDefaults(post *Post) {
 	}
 }
 
+func ensureSiteSettingsDefaults(settings *SiteSettings) {
+	if settings.ID == "" {
+		settings.ID = siteSettingsSingletonID
+	}
+	settings.ID = siteSettingsSingletonID
+	settings.UpdatedAt = time.Now().UTC()
+}
+
+func ensureProjectDefaults(project *Project) {
+	now := time.Now().UTC()
+	if project.ID == "" {
+		project.ID = uuid.NewString()
+	}
+	if project.CreatedAt.IsZero() {
+		project.CreatedAt = now
+	}
+	project.UpdatedAt = now
+}
+
 func ensureEventDefaults(event *Event) {
 	if event.ID == "" {
 		event.ID = uuid.NewString()
 	}
 	if event.CurrentParticipants == nil {
 		event.CurrentParticipants = make([]int64, 0)
+	}
+	if event.Time == "" && !event.Date.IsZero() {
+		event.Time = event.Date.Format("15:04")
 	}
 }
 

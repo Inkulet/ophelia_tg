@@ -78,14 +78,6 @@ export class EventListComponent implements OnInit {
     );
   }
 
-  mediaUrl(path: string): string {
-    return this.cmsService.resolveMediaUrl(path);
-  }
-
-  isVideo(path: string): boolean {
-    return path.toLowerCase().endsWith('.mp4');
-  }
-
   private loadEvents(): void {
     this.cmsService.getEvents().subscribe({
       next: (events) => {

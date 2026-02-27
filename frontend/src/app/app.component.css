@@ -1,1 +1,66 @@
+.dynamic-background {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-image: radial-gradient(circle at 20% 20%, #71705c 0%, #2b2c25 60%);
+}
 
+.background-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    180deg,
+    rgba(43, 44, 37, 0.5) 0%,
+    rgba(43, 44, 37, 0.82) 70%,
+    rgba(43, 44, 37, 0.94) 100%
+  );
+}
+
+.app-container {
+  min-height: 100vh;
+}
+
+.navbar {
+  background-color: rgba(43, 44, 37, 0.92);
+  padding: 1rem;
+  position: fixed;
+  top: 0;
+  width: 100%;
+  z-index: 1000;
+}
+
+.navbar ul {
+  list-style: none;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.8rem 1rem;
+  margin: 0;
+  padding: 0;
+}
+
+.navbar a {
+  color: var(--platinum);
+  text-decoration: none;
+  padding: 0.45rem 0.9rem;
+  border-radius: 10px;
+  transition: background-color 0.2s ease;
+}
+
+.navbar a:hover {
+  background-color: rgba(113, 112, 92, 0.65);
+}
+
+.main-content-wrapper {
+  margin-top: 74px;
+}
+
+.content {
+  padding: 1.25rem;
+  display: flex;
+  justify-content: center;
+}

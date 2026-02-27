@@ -1,0 +1,23 @@
+<section class="section-container">
+  <h2 class="section-title">Главная</h2>
+
+  <p class="state-text" *ngIf="loading">Загружаем данные...</p>
+  <p class="state-text error" *ngIf="!loading && error">{{ error }}</p>
+
+  <div class="home-layout" *ngIf="!loading && !error">
+    <div class="avatar-wrap" *ngIf="avatarUrl">
+      <img [src]="avatarUrl" alt="Аватар" loading="lazy" />
+    </div>
+
+    <div class="description-wrap">
+      <p class="description" *ngIf="settings?.homeDescription; else fallback">
+        {{ settings?.homeDescription }}
+      </p>
+      <ng-template #fallback>
+        <p class="description">
+          Добро пожаловать. Контент главной страницы настраивается через Telegram-бот.
+        </p>
+      </ng-template>
+    </div>
+  </div>
+</section>

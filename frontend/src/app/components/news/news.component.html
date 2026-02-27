@@ -1,0 +1,17 @@
+<section class="section-container">
+  <h2 class="section-title">Новости канала</h2>
+
+  <p class="state-text" *ngIf="loading">Загружаем публикации...</p>
+  <p class="state-text error" *ngIf="!loading && error">{{ error }}</p>
+  <p class="state-text" *ngIf="!loading && !error && posts.length === 0">
+    Публикаций пока нет.
+  </p>
+
+  <div class="news-grid" *ngIf="!loading && !error && posts.length > 0">
+    <article class="news-card" *ngFor="let post of posts">
+      <img *ngIf="post.imageURL" [src]="post.imageURL" [alt]="post.id" loading="lazy" />
+      <p>{{ post.text }}</p>
+      <a [href]="post.postURL" target="_blank" rel="noreferrer">Открыть в Telegram</a>
+    </article>
+  </div>
+</section>

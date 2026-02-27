@@ -1,55 +1,47 @@
-import { isPlatformBrowser } from '@angular/common';
+import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { Component, HostListener, Inject, OnInit, PLATFORM_ID } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { SidebarComponent } from './components/sidebar/sidebar.component';
+import { CmsService } from './services/cms.service';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterModule, SidebarComponent],
-  template: `
-    <!-- Видеофон -->
-    <div class="video-background">
-      <video autoplay loop muted playsinline class="video-bg">
-        <source src="../assets/video/fon_video.mov" type="video/quicktime">
-      </video>
-    </div>
-
-    <!-- Основной контент -->
-    <div class="app-container">
-      <nav class="navbar">
-        <ul>
-          <li><a routerLink="/">Главная</a></li>
-          <li><a routerLink="/about">О себе</a></li>
-          <li><a routerLink="/skills">Экскурсии</a></li>
-          <li><a routerLink="/news">Новости</a></li>
-          <li><a routerLink="/events">Мероприятия</a></li>
-          <li><a routerLink="/projects">Проекты</a></li>
-          <li><a routerLink="/contact">Контакты</a></li>
-        </ul>
-      </nav>
-
-      <div class="main-content-wrapper">
-        <app-sidebar [class.scrolled]="isScrolled"></app-sidebar>
-        <div class="content">
-          <router-outlet></router-outlet>
-        </div>
-      </div>
-    </div>
-  `
+  imports: [CommonModule, RouterModule, SidebarComponent],
+  templateUrl: './app.component.html',
+  styleUrls: ['./app.component.css'],
 })
 export class AppComponent implements OnInit {
-  constructor(@Inject(PLATFORM_ID) private readonly platformId: object) {}
-
   isScrolled = false;
+  backgroundImageStyle = '';
+
+  constructor(
+    @Inject(PLATFORM_ID) private readonly platformId: object,
+    private readonly cmsService: CmsService,
+  ) {}
 
   ngOnInit(): void {
     this.captureUserIdFromQuery();
+    this.loadBackground();
   }
 
-  @HostListener('window:scroll', ['$event'])
-  onWindowScroll() {
+  @HostListener('window:scroll')
+  onWindowScroll(): void {
     this.isScrolled = window.pageYOffset > 60;
+  }
+
+  private loadBackground(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    this.cmsService.getSiteSettings().subscribe({
+      next: (settings) => {
+        const background = this.cmsService.resolveMediaUrl(settings.backgroundURL);
+        if (background !== '') {
+          this.backgroundImageStyle = `url('${background}')`;
+        }
+      },
+    });
   }
 
   private captureUserIdFromQuery(): void {
@@ -59,8 +51,8 @@ export class AppComponent implements OnInit {
 
     const url = new URL(window.location.href);
     const keys = ['user_id', 'tg_user_id', 'telegram_user_id'];
-
     let userID: number | null = null;
+
     for (const key of keys) {
       const value = url.searchParams.get(key);
       if (!value) {

@@ -1,0 +1,22 @@
+<div class="dynamic-background" [style.background-image]="backgroundImageStyle"></div>
+<div class="background-overlay"></div>
+
+<div class="app-container">
+  <nav class="navbar">
+    <ul>
+      <li><a routerLink="/">Главная</a></li>
+      <li><a routerLink="/about">О себе</a></li>
+      <li><a routerLink="/news">Новости</a></li>
+      <li><a routerLink="/events">Мероприятия</a></li>
+      <li><a routerLink="/projects">Проекты</a></li>
+      <li><a routerLink="/contact">Контакты</a></li>
+    </ul>
+  </nav>
+
+  <div class="main-content-wrapper">
+    <app-sidebar [class.scrolled]="isScrolled"></app-sidebar>
+    <div class="content">
+      <router-outlet></router-outlet>
+    </div>
+  </div>
+</div>

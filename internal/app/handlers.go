@@ -212,6 +212,7 @@ const (
 	cbFunStats     = "ui_fun_stats"
 	cbAdminEvents  = "ui_admin_events"
 	cbAdminLogs    = "ui_admin_logs"
+	cbAdminCMS     = "ui_admin_cms"
 )
 
 // КОНСТАНТЫ СОСТОЯНИЙ
@@ -426,9 +427,11 @@ func buildAdminMenu() *tele.ReplyMarkup {
 	m := &tele.ReplyMarkup{}
 	btnLogs := m.Data("Логи", cbAdminLogs)
 	btnEvents := m.Data("Мероприятия", cbAdminEvents)
+	btnCMS := m.Data("Управление Сайтом", cbAdminCMS)
 	btnBack := m.Data("🔙 Назад", cbBackToMain)
 	m.Inline(
 		m.Row(btnLogs, btnEvents),
+		m.Row(btnCMS),
 		m.Row(btnBack),
 	)
 	return m
@@ -499,6 +502,7 @@ func RegisterHandlers(b *tele.Bot) {
 	b.Handle("/event_manage", HandleCMSEventManageCommand)
 	b.Handle("/cms_event_add", HandleCMSEventAddCommand)
 	b.Handle("/cms_post_del", HandleCMSPostDelCommand)
+	b.Handle("/cms_site", HandleCMSSiteCommand)
 
 	// Команды пользователя
 	b.Handle("/me", HandleMe)
@@ -725,6 +729,12 @@ func processCallback(c tele.Context) error {
 	data := strings.TrimSpace(c.Callback().Data)
 	userID := c.Sender().ID
 
+	if cmsService != nil {
+		if handled, err := cmsService.HandleBotCMSCallback(c, data); handled {
+			return err
+		}
+	}
+
 	// Новый callback-router для многоуровневого UI (Главное -> Сайт/Развлечения/Админ).
 	// Здесь делаем только редактирование текущего сообщения, чтобы не спамить чат.
 	switch data {
@@ -739,6 +749,14 @@ func processCallback(c tele.Context) error {
 			return tryEdit(c, "Доступ к админке закрыт.", buildMainMenu(userID), tele.ModeHTML)
 		}
 		return tryEdit(c, "Админка. Выберите раздел:", buildAdminMenu(), tele.ModeHTML)
+	case cbAdminCMS:
+		if !isAdmin(userID) {
+			return tryEdit(c, "Недостаточно прав.", buildMainMenu(userID), tele.ModeHTML)
+		}
+		if cmsService == nil {
+			return tryEdit(c, "CMS-репозиторий не инициализирован.", buildAdminMenu(), tele.ModeHTML)
+		}
+		return cmsService.HandleBotSiteAdminMenu(c)
 	case cbSiteHome:
 		return tryEdit(c, "Главная: новости и события доступны на сайте.", buildSiteMenu(), tele.ModeHTML)
 	case cbSiteAbout:
@@ -1709,6 +1727,7 @@ func HandleHelp(c tele.Context) error {
 		"/admin — панель управления\n" +
 		"/status, /audit, /history, /broadcasts — диагностика и отчеты\n" +
 		"/whitelist, /whitelist_del — белый список\n" +
+		"/cms_site — инлайн-меню управления сайтом\n" +
 		"/cms_post — создать пост\n" +
 		"/cms_post_del — удалить пост\n" +
 		"/cms_event_add — добавить мероприятие\n" +
@@ -1743,6 +1762,13 @@ func HandleCMSPostDelCommand(c tele.Context) error {
 		return c.Send("CMS-репозиторий не инициализирован.", tele.ModeHTML)
 	}
 	return cmsService.HandleBotPostDelete(c)
+}
+
+func HandleCMSSiteCommand(c tele.Context) error {
+	if cmsService == nil {
+		return c.Send("CMS-репозиторий не инициализирован.", tele.ModeHTML)
+	}
+	return cmsService.HandleBotSiteAdminMenu(c)
 }
 func HandleAdminPanel(c tele.Context) error {
 	if c.Chat() == nil || c.Sender() == nil {
@@ -2943,6 +2969,11 @@ func HandleUserJoin(c tele.Context) error {
 	return nil
 }
 func HandlePhoto(c tele.Context) error {
+	if cmsService != nil {
+		if handled, err := cmsService.HandleBotCMSAdminMedia(c); handled {
+			return err
+		}
+	}
 	userID := c.Sender().ID
 	state := getAdminState(userID)
 	if isAdmin(userID) && state == STATE_WAITING_PHOTO {
@@ -2991,6 +3022,11 @@ func HandlePhoto(c tele.Context) error {
 	return nil
 }
 func HandleDocument(c tele.Context) error {
+	if cmsService != nil {
+		if handled, err := cmsService.HandleBotCMSAdminMedia(c); handled {
+			return err
+		}
+	}
 	userID := c.Sender().ID
 	state := getAdminState(userID)
 	if hasPermission(userID, PermImportDB) && state == STATE_WAITING_DB_IMPORT && c.Chat().Type == tele.ChatPrivate {
@@ -3061,8 +3097,16 @@ func HandleText(c tele.Context) error {
 			return HandleCMSEventAddCommand(c)
 		case "cms_post_del":
 			return HandleCMSPostDelCommand(c)
+		case "cms_site":
+			return HandleCMSSiteCommand(c)
 		case "whitelist_del":
 			return HandleWhitelistDel(c)
+		}
+	}
+
+	if cmsService != nil {
+		if handled, err := cmsService.HandleBotCMSAdminText(c); handled {
+			return err
 		}
 	}
 
