@@ -739,6 +739,7 @@ func processCallback(c tele.Context) error {
 	// Здесь делаем только редактирование текущего сообщения, чтобы не спамить чат.
 	switch data {
 	case cbMainMenu, cbBackToMain:
+		resetCMSAdminState(userID)
 		return showMainInlineMenu(c, true)
 	case cbMainSite:
 		return tryEdit(c, "Раздел сайта. Выберите страницу:", buildSiteMenu(), tele.ModeHTML)
@@ -1774,6 +1775,7 @@ func HandleAdminPanel(c tele.Context) error {
 	if c.Chat() == nil || c.Sender() == nil {
 		return nil
 	}
+	resetCMSAdminState(c.Sender().ID)
 	if c.Chat().Type == tele.ChatPrivate && isStaff(c.Sender().ID) {
 		return showStaffPanel(c, false)
 	}
@@ -1784,8 +1786,18 @@ func HandleStartSuggest(c tele.Context) error {
 	setAdminState(c.Sender().ID, STATE_WOMAN_NAME)
 	return c.Send("Вы решили пополнить архив (Шаг 1).\n\nНазовите Имя и Фамилию:", cancelSuggestMenu, tele.ModeHTML)
 }
+
+func resetCMSAdminState(userID int64) {
+	if userID <= 0 || cmsService == nil {
+		return
+	}
+	cmsService.SetState(userID, "")
+	cmsService.ResetDraft(userID)
+}
+
 func HandleBackToMain(c tele.Context) error {
 	if c.Sender() != nil {
+		resetCMSAdminState(c.Sender().ID)
 		setAdminState(c.Sender().ID, STATE_IDLE)
 	}
 	if c.Callback() != nil {
@@ -1804,6 +1816,7 @@ func showStaffPanel(c tele.Context, edit bool) error {
 	if c.Chat() == nil || c.Sender() == nil || c.Chat().Type != tele.ChatPrivate || !isStaff(c.Sender().ID) {
 		return nil
 	}
+	resetCMSAdminState(c.Sender().ID)
 	setAdminState(c.Sender().ID, STATE_IDLE)
 	pending := womanManager.CountPending()
 	inboxText := "Корреспонденция"

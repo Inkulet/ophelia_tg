@@ -26,6 +26,9 @@ const (
 	cmsUploadsDir         = "./uploads"
 	cmsMaxMultipartMemory = 32 << 20 // 32 MiB
 	telegramNewsSourceURL = "https://t.me/s/followmylifeflow"
+	cmsNewsCacheTTL       = 5 * time.Minute
+	cmsCleanupInterval    = time.Hour
+	cmsInactiveTTL        = 2 * time.Hour
 )
 
 var (
@@ -43,11 +46,17 @@ var (
 )
 
 type CMSService struct {
-	repo      Repository
-	uploadDir string
-	stateMu   sync.Mutex
-	states    map[int64]string
-	drafts    map[int64]*cmsBotDraft
+	repo        Repository
+	uploadDir   string
+	stateMu     sync.Mutex
+	states      map[int64]string
+	drafts      map[int64]*cmsBotDraft
+	lastSeen    map[int64]time.Time
+	cleanupOnce sync.Once
+
+	newsMu        sync.RWMutex
+	newsCache     []ChannelPost
+	newsCacheTime time.Time
 }
 
 type ChannelPost struct {
@@ -125,12 +134,15 @@ func NewCMSServiceWithUploadDir(repo Repository, uploadDir string) *CMSService {
 	if strings.TrimSpace(uploadDir) == "" {
 		uploadDir = cmsUploadsDir
 	}
-	return &CMSService{
+	service := &CMSService{
 		repo:      repo,
 		uploadDir: uploadDir,
 		states:    make(map[int64]string),
 		drafts:    make(map[int64]*cmsBotDraft),
+		lastSeen:  make(map[int64]time.Time),
 	}
+	service.StartCleanupLoop()
+	return service
 }
 
 func (s *CMSService) RegisterHTTPRoutes(mux *http.ServeMux) {
@@ -199,6 +211,7 @@ func (s *CMSService) HandleBotSiteAdminMenu(c tele.Context) error {
 	if c.Sender() == nil || !isAdmin(c.Sender().ID) {
 		return c.Reply("Недостаточно прав.")
 	}
+	s.touchUserActivity(c.Sender().ID)
 	s.setState(c.Sender().ID, cmsStateIdle)
 	s.resetDraft(c.Sender().ID)
 	return s.renderMenu(c, false, "🛠 <b>Управление Сайтом</b>\nВыберите категорию:", s.buildSiteAdminMenu())
@@ -212,6 +225,7 @@ func (s *CMSService) HandleBotCMSCallback(c tele.Context, data string) (bool, er
 		return true, nil
 	}
 	userID := c.Sender().ID
+	s.touchUserActivity(userID)
 	if !isAdmin(userID) {
 		return true, tryEdit(c, "Недостаточно прав.", buildMainMenu(userID), tele.ModeHTML)
 	}
@@ -363,6 +377,7 @@ func (s *CMSService) HandleBotCMSAdminText(c tele.Context) (bool, error) {
 	if c.Sender() == nil || !isAdmin(c.Sender().ID) {
 		return false, nil
 	}
+	s.touchUserActivity(c.Sender().ID)
 	state := s.getState(c.Sender().ID)
 	if state == cmsStateIdle {
 		return false, nil
@@ -534,6 +549,7 @@ func (s *CMSService) HandleBotCMSAdminMedia(c tele.Context) (bool, error) {
 	if c.Sender() == nil || !isAdmin(c.Sender().ID) {
 		return false, nil
 	}
+	s.touchUserActivity(c.Sender().ID)
 	state := s.getState(c.Sender().ID)
 	if state != cmsStateSetBackgroundMedia && state != cmsStateSetAvatarMedia {
 		return false, nil
@@ -809,10 +825,36 @@ func (s *CMSService) buildBackToCMSMenu() *tele.ReplyMarkup {
 	return menu
 }
 
-func (s *CMSService) setState(userID int64, state string) {
+func (s *CMSService) StartCleanupLoop() {
+	if s == nil {
+		return
+	}
+	s.cleanupOnce.Do(func() {
+		ticker := time.NewTicker(cmsCleanupInterval)
+		go func() {
+			for range ticker.C {
+				s.cleanupInactiveStatesAndDrafts()
+			}
+		}()
+	})
+}
+
+func (s *CMSService) SetState(userID int64, state string) {
+	if userID <= 0 {
+		return
+	}
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	s.states[userID] = state
+	if state == "" {
+		delete(s.states, userID)
+	} else {
+		s.states[userID] = state
+	}
+	s.lastSeen[userID] = time.Now()
+}
+
+func (s *CMSService) setState(userID int64, state string) {
+	s.SetState(userID, state)
 }
 
 func (s *CMSService) getState(userID int64) string {
@@ -821,10 +863,18 @@ func (s *CMSService) getState(userID int64) string {
 	return s.states[userID]
 }
 
-func (s *CMSService) resetDraft(userID int64) {
+func (s *CMSService) ResetDraft(userID int64) {
+	if userID <= 0 {
+		return
+	}
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	delete(s.drafts, userID)
+	s.lastSeen[userID] = time.Now()
+}
+
+func (s *CMSService) resetDraft(userID int64) {
+	s.ResetDraft(userID)
 }
 
 func (s *CMSService) getDraft(userID int64) *cmsBotDraft {
@@ -835,7 +885,31 @@ func (s *CMSService) getDraft(userID int64) *cmsBotDraft {
 		d = &cmsBotDraft{}
 		s.drafts[userID] = d
 	}
+	s.lastSeen[userID] = time.Now()
 	return d
+}
+
+func (s *CMSService) touchUserActivity(userID int64) {
+	if userID <= 0 {
+		return
+	}
+	s.stateMu.Lock()
+	s.lastSeen[userID] = time.Now()
+	s.stateMu.Unlock()
+}
+
+func (s *CMSService) cleanupInactiveStatesAndDrafts() {
+	cutoff := time.Now().Add(-cmsInactiveTTL)
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	for userID, last := range s.lastSeen {
+		if last.After(cutoff) {
+			continue
+		}
+		delete(s.lastSeen, userID)
+		delete(s.states, userID)
+		delete(s.drafts, userID)
+	}
 }
 
 // GetPosts returns only public posts for website.
@@ -963,6 +1037,38 @@ func (s *CMSService) GetNews(w http.ResponseWriter, r *http.Request) {
 
 // GetChannelPosts parses latest Telegram channel posts from public HTML mirror.
 func (s *CMSService) GetChannelPosts(ctx context.Context) ([]ChannelPost, error) {
+	now := time.Now()
+	s.newsMu.RLock()
+	if !s.newsCacheTime.IsZero() && now.Sub(s.newsCacheTime) < cmsNewsCacheTTL {
+		cached := cloneChannelPosts(s.newsCache)
+		s.newsMu.RUnlock()
+		return cached, nil
+	}
+	s.newsMu.RUnlock()
+
+	s.newsMu.Lock()
+	defer s.newsMu.Unlock()
+
+	// Re-check under write lock to avoid parallel refresh storms.
+	now = time.Now()
+	if !s.newsCacheTime.IsZero() && now.Sub(s.newsCacheTime) < cmsNewsCacheTTL {
+		return cloneChannelPosts(s.newsCache), nil
+	}
+
+	posts, err := s.fetchChannelPosts(ctx)
+	if err != nil {
+		if !s.newsCacheTime.IsZero() {
+			return cloneChannelPosts(s.newsCache), nil
+		}
+		return nil, err
+	}
+
+	s.newsCache = cloneChannelPosts(posts)
+	s.newsCacheTime = time.Now()
+	return cloneChannelPosts(s.newsCache), nil
+}
+
+func (s *CMSService) fetchChannelPosts(ctx context.Context) ([]ChannelPost, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, telegramNewsSourceURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -1017,6 +1123,15 @@ func (s *CMSService) GetChannelPosts(ctx context.Context) ([]ChannelPost, error)
 	}
 
 	return posts, nil
+}
+
+func cloneChannelPosts(items []ChannelPost) []ChannelPost {
+	if len(items) == 0 {
+		return []ChannelPost{}
+	}
+	out := make([]ChannelPost, len(items))
+	copy(out, items)
+	return out
 }
 
 func extractChannelText(fragment string) string {
@@ -1089,6 +1204,7 @@ func (s *CMSService) HandleBotCreatePost(c tele.Context) error {
 	if c.Sender() == nil || !isAdmin(c.Sender().ID) {
 		return c.Reply("Недостаточно прав.")
 	}
+	s.touchUserActivity(c.Sender().ID)
 	if s.repo == nil {
 		return c.Reply("CMS-репозиторий не инициализирован.")
 	}
@@ -1128,6 +1244,7 @@ func (s *CMSService) HandleBotEventManage(c tele.Context) error {
 	if c.Sender() == nil || !isAdmin(c.Sender().ID) {
 		return c.Reply("Недостаточно прав.")
 	}
+	s.touchUserActivity(c.Sender().ID)
 	if s.repo == nil {
 		return c.Reply("CMS-репозиторий не инициализирован.")
 	}
@@ -1192,6 +1309,7 @@ func (s *CMSService) HandleBotEventAdd(c tele.Context) error {
 	if c.Sender() == nil || !isAdmin(c.Sender().ID) {
 		return c.Reply("Недостаточно прав.")
 	}
+	s.touchUserActivity(c.Sender().ID)
 	if s.repo == nil {
 		return c.Reply("CMS-репозиторий не инициализирован.")
 	}
@@ -1229,6 +1347,7 @@ func (s *CMSService) HandleBotPostDelete(c tele.Context) error {
 	if c.Sender() == nil || !isAdmin(c.Sender().ID) {
 		return c.Reply("Недостаточно прав.")
 	}
+	s.touchUserActivity(c.Sender().ID)
 	if s.repo == nil {
 		return c.Reply("CMS-репозиторий не инициализирован.")
 	}
@@ -1484,13 +1603,10 @@ func parseBotEventPayload(msg *tele.Message) (string, time.Time, string, string,
 	}
 	if raw == "" {
 		raw = strings.TrimSpace(msg.Text)
-		if strings.HasPrefix(raw, "/") {
-			parts := strings.Fields(raw)
-			if len(parts) > 0 {
-				raw = strings.TrimSpace(strings.TrimPrefix(raw, parts[0]))
-			}
-		}
 	}
+	raw = trimBotCommandPayload(raw, "cms_event_add")
+	raw = strings.TrimPrefix(raw, "|")
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", time.Time{}, "", "", 0, "", errors.New("empty payload")
 	}
@@ -1526,6 +1642,29 @@ func parseBotEventPayload(msg *tele.Message) (string, time.Time, string, string,
 	}
 
 	return title, date, timeRaw, location, maxParticipants, description, nil
+}
+
+func trimBotCommandPayload(raw, command string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || !strings.HasPrefix(raw, "/") {
+		return raw
+	}
+
+	lowerRaw := strings.ToLower(raw)
+	cmdPrefix := "/" + strings.ToLower(command)
+	if !strings.HasPrefix(lowerRaw, cmdPrefix) {
+		return raw
+	}
+
+	rest := raw[len(cmdPrefix):]
+	if strings.HasPrefix(rest, "@") {
+		sep := strings.IndexAny(rest, " \n\t\r|")
+		if sep == -1 {
+			return ""
+		}
+		rest = rest[sep:]
+	}
+	return strings.TrimSpace(rest)
 }
 
 func parseEventDate(raw string) (time.Time, error) {

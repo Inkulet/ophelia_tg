@@ -41,6 +41,9 @@ export class AppComponent implements OnInit {
           this.backgroundImageStyle = `url('${background}')`;
         }
       },
+      error: (err) => {
+        console.error('Settings load failed', err);
+      },
     });
   }
 

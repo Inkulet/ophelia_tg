@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { map, Observable, shareReplay, throwError } from 'rxjs';
+import { catchError, map, Observable, of, shareReplay, throwError } from 'rxjs';
 import { Event, NewsPost, Post, Project, SiteSettings } from '../models/cms.model';
 
 type AnyRecord = Record<string, unknown>;
@@ -22,6 +22,7 @@ export class CmsService {
           map((item) =>
             this.normalizeSiteSettings((item as AnyRecord) ?? {}),
           ),
+          catchError(() => of(this.emptySiteSettings())),
           shareReplay(1),
         );
     }
@@ -126,6 +127,19 @@ export class CmsService {
         'contact_location',
         'ContactLocation',
       ]),
+    };
+  }
+
+  private emptySiteSettings(): SiteSettings {
+    return {
+      id: '',
+      backgroundURL: '',
+      avatarURL: '',
+      homeDescription: '',
+      aboutText: '',
+      contactEmail: '',
+      contactPhone: '',
+      contactLocation: '',
     };
   }
 
