@@ -1,0 +1,11 @@
+services:
+  ophelia:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./configs:/app/configs
+      - ./ophelia.db:/app/ophelia.db
+      - ./women.db:/app/women.db
