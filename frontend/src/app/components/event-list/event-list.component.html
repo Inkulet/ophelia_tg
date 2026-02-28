@@ -9,6 +9,18 @@
 
   <div class="events-grid" *ngIf="!loading && !error && events.length > 0">
     <article class="event-card" *ngFor="let event of events">
+      <div class="media-wrap" *ngIf="event.mediaURL">
+        <video
+          *ngIf="isVideoMedia(event.mediaURL); else eventImage"
+          [src]="mediaUrl(event.mediaURL)"
+          controls
+          preload="metadata"
+        ></video>
+        <ng-template #eventImage>
+          <img [src]="mediaUrl(event.mediaURL)" [alt]="event.title" loading="lazy" />
+        </ng-template>
+      </div>
+
       <h3 class="event-title">{{ event.title }}</h3>
       <p class="event-date">Дата: {{ event.date | date:'dd.MM.yyyy' }}</p>
       <p class="event-date" *ngIf="event.time">Время: {{ event.time }}</p>

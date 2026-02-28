@@ -2,13 +2,17 @@ package app
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,6 +31,7 @@ const (
 	cmsInactiveTTL        = 2 * time.Hour
 	cmsWomenDefaultLimit  = 12
 	cmsWomenMaxLimit      = 60
+	cmsTelegramMediaDir   = "telegram_cache"
 )
 
 var (
@@ -45,6 +50,8 @@ type CMSService struct {
 	drafts      map[int64]*cmsBotDraft
 	lastSeen    map[int64]time.Time
 	cleanupOnce sync.Once
+	mediaMu     sync.RWMutex
+	mediaCache  map[string]string
 }
 
 type CMSWoman struct {
@@ -132,11 +139,12 @@ func NewCMSServiceWithUploadDir(repo Repository, uploadDir string) *CMSService {
 		uploadDir = cmsUploadsDir
 	}
 	service := &CMSService{
-		repo:      repo,
-		uploadDir: uploadDir,
-		states:    make(map[int64]string),
-		drafts:    make(map[int64]*cmsBotDraft),
-		lastSeen:  make(map[int64]time.Time),
+		repo:       repo,
+		uploadDir:  uploadDir,
+		states:     make(map[int64]string),
+		drafts:     make(map[int64]*cmsBotDraft),
+		lastSeen:   make(map[int64]time.Time),
+		mediaCache: make(map[string]string),
 	}
 	service.StartCleanupLoop()
 	return service
@@ -529,6 +537,8 @@ func (s *CMSService) HandleBotCMSAdminText(c tele.Context) (bool, error) {
 			event.Time = text
 		case "location":
 			event.Location = text
+		case "media":
+			event.MediaURL = text
 		case "max":
 			maxValue, parseErr := strconv.Atoi(text)
 			if parseErr != nil || maxValue < 0 {
@@ -555,7 +565,11 @@ func (s *CMSService) HandleBotCMSAdminMedia(c tele.Context) (bool, error) {
 	}
 	s.touchUserActivity(c.Sender().ID)
 	state := s.getState(c.Sender().ID)
-	if state != cmsStateSetBackgroundMedia && state != cmsStateSetAvatarMedia {
+	if state != cmsStateSetBackgroundMedia &&
+		state != cmsStateSetAvatarMedia &&
+		state != cmsStateProjectCreateMedia &&
+		state != cmsStateProjectEditValue &&
+		state != cmsStateEventEditValue {
 		return false, nil
 	}
 	if c.Message() == nil {
@@ -567,31 +581,97 @@ func (s *CMSService) HandleBotCMSAdminMedia(c tele.Context) (bool, error) {
 		return true, c.Reply("Ошибка сохранения файла: " + err.Error())
 	}
 	if mediaPath == "" {
-		return true, c.Reply("Пришлите файл в формате jpg/png.")
+		return true, c.Reply("Пришлите медиафайл (jpg/png, для проектов также mp4).")
 	}
 	ext := strings.ToLower(filepath.Ext(mediaPath))
-	if ext != ".jpg" && ext != ".png" {
-		s.removeLocalMedia(mediaPath)
-		return true, c.Reply("Для фона и аватара разрешены только jpg/png.")
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	settings, err := s.ensureSiteSettings(ctx)
-	if err != nil {
-		return true, c.Reply("Ошибка чтения настроек: " + err.Error())
-	}
-	if state == cmsStateSetBackgroundMedia {
-		settings.BackgroundURL = mediaPath
-	} else {
-		settings.AvatarURL = mediaPath
-	}
-	if err := s.repo.UpdateSiteSettings(ctx, settings); err != nil {
-		return true, c.Reply("Ошибка обновления настроек: " + err.Error())
+
+	switch state {
+	case cmsStateSetBackgroundMedia, cmsStateSetAvatarMedia:
+		if ext != ".jpg" && ext != ".png" {
+			s.removeLocalMedia(mediaPath)
+			return true, c.Reply("Для фона и аватара разрешены только jpg/png.")
+		}
+		settings, err := s.ensureSiteSettings(ctx)
+		if err != nil {
+			return true, c.Reply("Ошибка чтения настроек: " + err.Error())
+		}
+		if state == cmsStateSetBackgroundMedia {
+			settings.BackgroundURL = mediaPath
+		} else {
+			settings.AvatarURL = mediaPath
+		}
+		if err := s.repo.UpdateSiteSettings(ctx, settings); err != nil {
+			return true, c.Reply("Ошибка обновления настроек: " + err.Error())
+		}
+		s.setState(c.Sender().ID, cmsStateIdle)
+		return true, c.Reply("Файл сохранен и настройки обновлены.")
+
+	case cmsStateProjectCreateMedia:
+		if ext != ".jpg" && ext != ".png" && ext != ".mp4" {
+			s.removeLocalMedia(mediaPath)
+			return true, c.Reply("Для проекта разрешены jpg/png/mp4.")
+		}
+		d := s.getDraft(c.Sender().ID)
+		d.Project.MediaURL = mediaPath
+		if err := s.repo.CreateProject(ctx, &d.Project); err != nil {
+			return true, c.Reply("Ошибка создания проекта: " + err.Error())
+		}
+		s.setState(c.Sender().ID, cmsStateIdle)
+		s.resetDraft(c.Sender().ID)
+		return true, c.Reply("Проект добавлен.")
+
+	case cmsStateProjectEditValue:
+		d := s.getDraft(c.Sender().ID)
+		if strings.TrimSpace(d.ProjectID) == "" || strings.TrimSpace(d.Field) != "media" {
+			return false, nil
+		}
+		if ext != ".jpg" && ext != ".png" && ext != ".mp4" {
+			s.removeLocalMedia(mediaPath)
+			return true, c.Reply("Для проекта разрешены jpg/png/mp4.")
+		}
+		project, err := s.repo.GetProjectByID(ctx, d.ProjectID)
+		if err != nil {
+			if errors.Is(err, ErrCMSNotFound) {
+				return true, c.Reply("Проект не найден.")
+			}
+			return true, c.Reply("Ошибка загрузки проекта: " + err.Error())
+		}
+		project.MediaURL = mediaPath
+		if err := s.repo.UpdateProject(ctx, project); err != nil {
+			return true, c.Reply("Ошибка обновления проекта: " + err.Error())
+		}
+		d.Field = ""
+		s.setState(c.Sender().ID, cmsStateIdle)
+		return true, c.Reply("Проект обновлен.")
+
+	case cmsStateEventEditValue:
+		d := s.getDraft(c.Sender().ID)
+		if strings.TrimSpace(d.EventID) == "" || strings.TrimSpace(d.EventField) != "media" {
+			return false, nil
+		}
+		if ext != ".jpg" && ext != ".png" && ext != ".mp4" {
+			s.removeLocalMedia(mediaPath)
+			return true, c.Reply("Для мероприятия разрешены jpg/png/mp4.")
+		}
+		event, err := s.repo.GetEventByID(ctx, d.EventID)
+		if err != nil {
+			if errors.Is(err, ErrCMSNotFound) {
+				return true, c.Reply("Мероприятие не найдено.")
+			}
+			return true, c.Reply("Ошибка загрузки мероприятия: " + err.Error())
+		}
+		event.MediaURL = mediaPath
+		if err := s.repo.UpdateEvent(ctx, event); err != nil {
+			return true, c.Reply("Ошибка обновления мероприятия: " + err.Error())
+		}
+		d.EventField = ""
+		s.setState(c.Sender().ID, cmsStateIdle)
+		return true, c.Reply("Мероприятие обновлено.")
 	}
 
-	s.setState(c.Sender().ID, cmsStateIdle)
-	return true, c.Reply("Файл сохранен и настройки обновлены.")
+	return false, nil
 }
 
 func (s *CMSService) updateSiteSettingsText(c tele.Context, update func(*SiteSettings), okMessage string) error {
@@ -806,6 +886,7 @@ func (s *CMSService) buildEventFieldMenu() *tele.ReplyMarkup {
 		menu.Row(menu.Data("Date", cmsCbEventFieldPrefix+"date")),
 		menu.Row(menu.Data("Time", cmsCbEventFieldPrefix+"time")),
 		menu.Row(menu.Data("Location", cmsCbEventFieldPrefix+"location")),
+		menu.Row(menu.Data("MediaURL", cmsCbEventFieldPrefix+"media")),
 		menu.Row(menu.Data("MaxParticipants", cmsCbEventFieldPrefix+"max")),
 		menu.Row(menu.Data("🔙 Назад", cmsCbAdminEvents)),
 	)
@@ -1010,6 +1091,18 @@ func (s *CMSService) GetProjects(w http.ResponseWriter, r *http.Request) {
 		writeCMSError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	for i := range projects {
+		original := strings.TrimSpace(projects[i].MediaURL)
+		resolved := s.resolveWebMediaPath(r.Context(), original)
+		projects[i].MediaURL = resolved
+		if resolved != "" && resolved != original && looksLikeTelegramFileID(original) {
+			projectCopy := projects[i]
+			projectCopy.MediaURL = resolved
+			if err := s.repo.UpdateProject(r.Context(), &projectCopy); err != nil {
+				log.Printf("⚠️ project media cache persist failed (%s): %v", projectCopy.ID, err)
+			}
+		}
+	}
 	writeCMSJSON(w, http.StatusOK, projects)
 }
 
@@ -1026,6 +1119,18 @@ func (s *CMSService) GetEvents(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeCMSError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	for i := range items {
+		original := strings.TrimSpace(items[i].MediaURL)
+		resolved := s.resolveWebMediaPath(r.Context(), original)
+		items[i].MediaURL = resolved
+		if resolved != "" && resolved != original && looksLikeTelegramFileID(original) {
+			eventCopy := items[i]
+			eventCopy.MediaURL = resolved
+			if err := s.repo.UpdateEvent(r.Context(), &eventCopy); err != nil {
+				log.Printf("⚠️ event media cache persist failed (%s): %v", eventCopy.ID, err)
+			}
+		}
 	}
 	writeCMSJSON(w, http.StatusOK, items)
 }
@@ -1066,7 +1171,7 @@ func (s *CMSService) GetWomen(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]CMSWoman, 0, len(women))
 	for i := range women {
-		items = append(items, mapWomanToCMS(women[i]))
+		items = append(items, s.mapWomanToCMS(r.Context(), &women[i]))
 	}
 
 	writeCMSJSON(w, http.StatusOK, CMSWomenPage{
@@ -1103,32 +1208,39 @@ func parseWomenPagination(r *http.Request) (int, int, error) {
 	return limit, offset, nil
 }
 
-func mapWomanToCMS(woman Woman) CMSWoman {
+func (s *CMSService) mapWomanToCMS(ctx context.Context, woman *Woman) CMSWoman {
+	if woman == nil {
+		return CMSWoman{}
+	}
 	return CMSWoman{
 		ID:        woman.ID,
 		Name:      strings.TrimSpace(woman.Name),
 		Biography: strings.TrimSpace(woman.Info),
-		PhotoURL:  chooseWomanPhotoURL(woman),
-		Century:   resolveWomanCentury(woman),
+		PhotoURL:  s.chooseWomanPhotoURL(ctx, woman),
+		Century:   resolveWomanCentury(*woman),
 		Spheres:   splitWomanSpheres(woman.Field),
 	}
 }
 
-func chooseWomanPhotoURL(woman Woman) string {
-	if photo := strings.TrimSpace(woman.WebImageURL); photo != "" {
+func (s *CMSService) chooseWomanPhotoURL(ctx context.Context, woman *Woman) string {
+	if woman == nil {
+		return ""
+	}
+	if photo := s.resolveWebMediaPath(ctx, woman.WebImageURL); photo != "" {
+		if photo != strings.TrimSpace(woman.WebImageURL) {
+			s.persistWomanWebImageURL(ctx, woman.ID, photo)
+			woman.WebImageURL = photo
+		}
 		return photo
 	}
 	for _, media := range woman.MediaIDs {
-		media = strings.TrimSpace(media)
-		if media == "" {
+		photo := s.resolveWebMediaPath(ctx, media)
+		if photo == "" {
 			continue
 		}
-		if strings.HasPrefix(media, "http://") || strings.HasPrefix(media, "https://") {
-			return media
-		}
-		if strings.HasPrefix(media, "/") || strings.HasPrefix(media, "./") || strings.HasPrefix(media, "uploads/") {
-			return media
-		}
+		s.persistWomanWebImageURL(ctx, woman.ID, photo)
+		woman.WebImageURL = photo
+		return photo
 	}
 	return ""
 }
@@ -1169,6 +1281,192 @@ func splitWomanSpheres(raw string) []string {
 		return []string{raw}
 	}
 	return spheres
+}
+
+func (s *CMSService) resolveWebMediaPath(ctx context.Context, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if isPublicMediaPath(raw) {
+		return raw
+	}
+	if !looksLikeTelegramFileID(raw) {
+		return ""
+	}
+
+	path, err := s.downloadTelegramMediaToUpload(ctx, raw)
+	if err != nil {
+		log.Printf("⚠️ media resolve failed for telegram file %q: %v", raw, err)
+		return ""
+	}
+	return path
+}
+
+func (s *CMSService) persistWomanWebImageURL(ctx context.Context, womanID uint, photoURL string) {
+	if womanID == 0 || photoURL == "" || womanManager == nil || womanManager.DB == nil {
+		return
+	}
+	_ = womanManager.DB.WithContext(ctx).
+		Model(&Woman{}).
+		Where("id = ?", womanID).
+		Update("web_image_url", photoURL).Error
+}
+
+func isPublicMediaPath(raw string) bool {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	return strings.HasPrefix(raw, "http://") ||
+		strings.HasPrefix(raw, "https://") ||
+		strings.HasPrefix(raw, "/") ||
+		strings.HasPrefix(raw, "./") ||
+		strings.HasPrefix(raw, "uploads/")
+}
+
+func looksLikeTelegramFileID(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false
+	}
+	lower := strings.ToLower(raw)
+	if strings.HasSuffix(lower, ".jpg") ||
+		strings.HasSuffix(lower, ".jpeg") ||
+		strings.HasSuffix(lower, ".png") ||
+		strings.HasSuffix(lower, ".webp") ||
+		strings.HasSuffix(lower, ".gif") ||
+		strings.HasSuffix(lower, ".mp4") ||
+		strings.HasSuffix(lower, ".mov") ||
+		strings.HasSuffix(lower, ".webm") {
+		return false
+	}
+	if strings.Contains(raw, "/") || strings.Contains(raw, "\\") || strings.Contains(raw, " ") {
+		return false
+	}
+	return len(raw) >= 20
+}
+
+func (s *CMSService) downloadTelegramMediaToUpload(ctx context.Context, fileID string) (string, error) {
+	fileID = strings.TrimSpace(fileID)
+	if fileID == "" {
+		return "", errors.New("empty telegram file id")
+	}
+	if token := strings.TrimSpace(config.Token); token == "" {
+		return "", errors.New("telegram token is not configured")
+	}
+
+	if cached := s.getCachedMediaPath(fileID); cached != "" {
+		if _, err := os.Stat(cached); err == nil {
+			return cached, nil
+		}
+	}
+
+	filePath, err := fetchTelegramFilePath(ctx, config.Token, fileID)
+	if err != nil {
+		return "", err
+	}
+	ext := strings.ToLower(filepath.Ext(filePath))
+	if ext == "" || len(ext) > 10 {
+		ext = ".jpg"
+	}
+	hash := sha1.Sum([]byte(fileID))
+	fileName := "tg_" + hex.EncodeToString(hash[:]) + ext
+	localPath := filepath.Join(s.uploadDir, cmsTelegramMediaDir, fileName)
+	if _, err := os.Stat(localPath); err == nil {
+		s.setCachedMediaPath(fileID, localPath)
+		return localPath, nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+		return "", err
+	}
+	if err := downloadTelegramFileByPath(ctx, config.Token, filePath, localPath); err != nil {
+		return "", err
+	}
+
+	s.setCachedMediaPath(fileID, localPath)
+	return localPath, nil
+}
+
+func fetchTelegramFilePath(ctx context.Context, botToken, fileID string) (string, error) {
+	endpoint := fmt.Sprintf("https://api.telegram.org/bot%s/getFile?file_id=%s", botToken, url.QueryEscape(fileID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := (&http.Client{Timeout: 12 * time.Second}).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("telegram getFile status: %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+		Result      struct {
+			FilePath string `json:"file_path"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", err
+	}
+	if !payload.OK {
+		if payload.Description == "" {
+			payload.Description = "telegram getFile returned not ok"
+		}
+		return "", errors.New(payload.Description)
+	}
+	filePath := strings.TrimSpace(payload.Result.FilePath)
+	if filePath == "" {
+		return "", errors.New("telegram file path is empty")
+	}
+	return filePath, nil
+}
+
+func downloadTelegramFileByPath(ctx context.Context, botToken, filePath, destination string) error {
+	filePath = strings.TrimPrefix(strings.TrimSpace(filePath), "/")
+	if filePath == "" {
+		return errors.New("telegram file path is empty")
+	}
+	endpoint := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", botToken, filePath)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("telegram file status: %d", resp.StatusCode)
+	}
+
+	file, err := os.Create(destination)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, resp.Body)
+	return err
+}
+
+func (s *CMSService) getCachedMediaPath(fileID string) string {
+	s.mediaMu.RLock()
+	defer s.mediaMu.RUnlock()
+	return strings.TrimSpace(s.mediaCache[fileID])
+}
+
+func (s *CMSService) setCachedMediaPath(fileID, localPath string) {
+	s.mediaMu.Lock()
+	s.mediaCache[fileID] = strings.TrimSpace(localPath)
+	s.mediaMu.Unlock()
 }
 
 // RegisterForEvent registers current user in event participants.

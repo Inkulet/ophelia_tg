@@ -49,6 +49,7 @@ type Event struct {
 	Date                time.Time `json:"date" gorm:"index;not null" bson:"date"`
 	Time                string    `json:"time" gorm:"size:32" bson:"time"`
 	Location            string    `json:"location" gorm:"type:text" bson:"location"`
+	MediaURL            string    `json:"media_url" gorm:"type:text" bson:"media_url"`
 	MaxParticipants     int       `json:"max_participants" gorm:"not null;default:0" bson:"max_participants"`
 	CurrentParticipants []int64   `json:"current_participants" gorm:"serializer:json" bson:"current_participants"`
 }
@@ -362,6 +363,7 @@ func (r *PostgreSQLRepository) UpdateEvent(ctx context.Context, event *Event) er
 		"date":                 event.Date,
 		"time":                 event.Time,
 		"location":             event.Location,
+		"media_url":            event.MediaURL,
 		"max_participants":     event.MaxParticipants,
 		"current_participants": event.CurrentParticipants,
 	})

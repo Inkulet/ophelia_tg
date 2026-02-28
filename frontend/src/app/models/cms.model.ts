@@ -16,6 +16,7 @@ export interface Event {
   date: string;
   time: string;
   location: string;
+  mediaURL: string;
   maxParticipants: number;
   currentParticipants: number[];
 }

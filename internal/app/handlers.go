@@ -648,7 +648,7 @@ func RegisterHandlers(b *tele.Bot) {
 			_ = c.Respond()
 		}()
 
-		data := strings.TrimSpace(c.Callback().Data)
+		data := callbackRouteKey(c.Callback())
 		userID := c.Sender().ID
 
 		// Проверка капчи
@@ -825,7 +825,7 @@ func RegisterHandlers(b *tele.Bot) {
 // ==========================================
 
 func processCallback(c tele.Context) error {
-	data := strings.TrimSpace(c.Callback().Data)
+	data := callbackRouteKey(c.Callback())
 	userID := c.Sender().ID
 
 	if cmsService != nil {
@@ -1542,6 +1542,16 @@ func sendCaptcha(c tele.Context) error {
 	return c.Send(fmt.Sprintf("🛡 <b>Проверка на человечность.</b>\nРешите пример: %d + %d = ?", a, b), menu, tele.ModeHTML)
 }
 
+func callbackRouteKey(cb *tele.Callback) string {
+	if cb == nil {
+		return ""
+	}
+	if unique := strings.TrimSpace(cb.Unique); unique != "" {
+		return strings.TrimPrefix(unique, "\f")
+	}
+	return strings.TrimSpace(cb.Data)
+}
+
 func Middleware() tele.MiddlewareFunc {
 	return func(next tele.HandlerFunc) tele.HandlerFunc {
 		return func(c tele.Context) error {
@@ -1574,7 +1584,7 @@ func Middleware() tele.MiddlewareFunc {
 
 			// Captcha
 			if !womanManager.IsUserVerified(sender.ID) {
-				if c.Callback() != nil && strings.HasPrefix(c.Callback().Data, "captcha_") {
+				if strings.HasPrefix(callbackRouteKey(c.Callback()), "captcha_") {
 					return next(c)
 				}
 				if c.Message() != nil && c.Message().Text == "/start" {
@@ -3195,6 +3205,15 @@ func HandlePhoto(c tele.Context) error {
 	}
 	userID := c.Sender().ID
 	state := getAdminState(userID)
+	webImageURL := ""
+	if cmsService != nil {
+		localPath, err := cmsService.saveTelegramMedia(c.Bot(), c.Message())
+		if err != nil {
+			log.Printf("⚠️ Не удалось сохранить локальную копию фото: %v", err)
+		} else {
+			webImageURL = strings.TrimSpace(localPath)
+		}
+	}
 	if isAdmin(userID) && state == STATE_WAITING_PHOTO {
 		gameManager.SetGamePhoto(c.Message().Photo.FileID)
 		setAdminState(userID, STATE_WAITING_ANSWER)
@@ -3213,6 +3232,9 @@ func HandlePhoto(c tele.Context) error {
 			return c.Send("Запись не обнаружена.")
 		}
 		w.MediaIDs = append(w.MediaIDs, c.Message().Photo.FileID)
+		if w.WebImageURL == "" && webImageURL != "" {
+			w.WebImageURL = webImageURL
+		}
 		if err := womanManager.UpdateWoman(w); err != nil {
 			log.Printf("⚠️ Ошибка обновления медиа: %v", err)
 			return c.Send("Ошибка обновления записи.")
@@ -3223,6 +3245,9 @@ func HandlePhoto(c tele.Context) error {
 		count := 0
 		if err := womanManager.WithDraft(userID, func(draft *Woman) error {
 			draft.MediaIDs = append(draft.MediaIDs, c.Message().Photo.FileID)
+			if draft.WebImageURL == "" && webImageURL != "" {
+				draft.WebImageURL = webImageURL
+			}
 			count = len(draft.MediaIDs)
 			return nil
 		}); err != nil {
@@ -3264,9 +3289,21 @@ func HandleDocument(c tele.Context) error {
 		return c.Send("Подтвердите замену базы данных. Действие необратимо.", buildConfirmMenu(), tele.ModeHTML)
 	}
 	if state == STATE_WOMAN_MEDIA && strings.HasPrefix(c.Message().Document.MIME, "image/") {
+		webImageURL := ""
+		if cmsService != nil {
+			localPath, err := cmsService.saveTelegramMedia(c.Bot(), c.Message())
+			if err != nil {
+				log.Printf("⚠️ Не удалось сохранить локальную копию документа-изображения: %v", err)
+			} else {
+				webImageURL = strings.TrimSpace(localPath)
+			}
+		}
 		count := 0
 		if err := womanManager.WithDraft(userID, func(draft *Woman) error {
 			draft.MediaIDs = append(draft.MediaIDs, c.Message().Document.FileID)
+			if draft.WebImageURL == "" && webImageURL != "" {
+				draft.WebImageURL = webImageURL
+			}
 			count = len(draft.MediaIDs)
 			return nil
 		}); err != nil {

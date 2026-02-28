@@ -163,6 +163,7 @@ export class CmsService {
       date: this.pickString(item, ['date', 'Date']),
       time: this.pickString(item, ['time', 'Time']),
       location: this.pickString(item, ['location', 'Location']),
+      mediaURL: this.pickString(item, ['media_url', 'MediaURL']),
       maxParticipants: this.pickNumber(item, [
         'max_participants',
         'MaxParticipants',
