@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -150,7 +149,7 @@ func (s *CMSService) RegisterHTTPRoutes(mux *http.ServeMux) {
 		return
 	}
 
-	mux.HandleFunc("/cms/posts", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/cms/posts", requireAdminIDForCreatePost(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			s.GetPosts(w, r)
@@ -159,7 +158,7 @@ func (s *CMSService) RegisterHTTPRoutes(mux *http.ServeMux) {
 		default:
 			writeCMSError(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
-	})
+	})))
 	mux.HandleFunc("/cms/settings", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeCMSError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -188,13 +187,13 @@ func (s *CMSService) RegisterHTTPRoutes(mux *http.ServeMux) {
 		}
 		s.GetNews(w, r)
 	})
-	mux.HandleFunc("/cms/events/register", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/cms/events/register", requireValidUserID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeCMSError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 		s.RegisterForEvent(w, r)
-	})
+	})))
 }
 
 func (s *CMSService) RegisterBotHandlers(bot *tele.Bot) {
@@ -1188,7 +1187,6 @@ func (s *CMSService) RegisterForEvent(w http.ResponseWriter, r *http.Request) {
 		writeCMSJSON(w, http.StatusOK, map[string]any{
 			"ok":      true,
 			"eventID": eventID,
-			"userID":  userID,
 		})
 	case errors.Is(err, ErrCMSNotFound):
 		writeCMSError(w, http.StatusNotFound, "event not found")
@@ -1448,9 +1446,9 @@ func extractEventID(r *http.Request) (string, error) {
 }
 
 func authorizeCMSWrite(r *http.Request, allowSelf bool) (int64, error) {
-	userID, err := extractCMSUserID(r)
-	if err != nil {
-		return 0, err
+	userID, ok := cmsUserIDFromContext(r.Context())
+	if !ok {
+		return 0, errors.New("valid bearer token is required")
 	}
 	if hasPermission(userID, PermEdit) {
 		return userID, nil
@@ -1459,77 +1457,6 @@ func authorizeCMSWrite(r *http.Request, allowSelf bool) (int64, error) {
 		return userID, nil
 	}
 	return 0, errors.New("insufficient permissions")
-}
-
-func extractCMSUserID(r *http.Request) (int64, error) {
-	candidates := []string{
-		r.Header.Get("X-User-ID"),
-		r.Header.Get("X-Telegram-User-ID"),
-		r.Header.Get("X-Admin-ID"),
-		r.URL.Query().Get("user_id"),
-		r.FormValue("user_id"),
-	}
-	for _, raw := range candidates {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			continue
-		}
-		id, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || id <= 0 {
-			return 0, errors.New("invalid user_id")
-		}
-		return id, nil
-	}
-	if id, ok := parseJSONUserID(r); ok {
-		return id, nil
-	}
-	return 0, errors.New("user_id is required")
-}
-
-func parseJSONUserID(r *http.Request) (int64, bool) {
-	if r == nil || r.Body == nil {
-		return 0, false
-	}
-
-	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
-	if !strings.HasPrefix(contentType, "application/json") {
-		return 0, false
-	}
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return 0, false
-	}
-	r.Body = io.NopCloser(bytes.NewReader(body))
-
-	if len(body) == 0 {
-		return 0, false
-	}
-
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return 0, false
-	}
-
-	raw, ok := payload["user_id"]
-	if !ok {
-		return 0, false
-	}
-
-	switch v := raw.(type) {
-	case float64:
-		id := int64(v)
-		if float64(id) == v && id > 0 {
-			return id, true
-		}
-	case string:
-		id, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
-		if err == nil && id > 0 {
-			return id, true
-		}
-	}
-
-	return 0, false
 }
 
 func writeCMSJSON(w http.ResponseWriter, status int, payload any) {

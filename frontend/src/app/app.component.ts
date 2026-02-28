@@ -21,7 +21,7 @@ export class AppComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.captureUserIdFromQuery();
+    this.captureAuthTokenFromQuery();
     this.loadBackground();
   }
 
@@ -47,39 +47,25 @@ export class AppComponent implements OnInit {
     });
   }
 
-  private captureUserIdFromQuery(): void {
+  private captureAuthTokenFromQuery(): void {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
 
     const url = new URL(window.location.href);
-    const keys = ['user_id', 'tg_user_id', 'telegram_user_id'];
-    let userID: number | null = null;
-
-    for (const key of keys) {
-      const value = url.searchParams.get(key);
-      if (!value) {
-        continue;
-      }
-      const parsed = Number(value);
-      if (Number.isInteger(parsed) && parsed > 0) {
-        userID = parsed;
-        break;
-      }
+    const token = (url.searchParams.get('token') ?? '').trim();
+    if (token !== '') {
+      localStorage.setItem('ophelia_cms_jwt', token);
     }
 
-    if (userID !== null) {
-      localStorage.setItem('ophelia_user_id', String(userID));
-      localStorage.setItem('telegram_user_id', String(userID));
-      localStorage.setItem('user_id', String(userID));
-    }
-
-    let changed = false;
-    for (const key of keys) {
-      if (url.searchParams.has(key)) {
-        url.searchParams.delete(key);
-        changed = true;
-      }
+    const changed = url.searchParams.has('token');
+    if (changed) {
+      url.searchParams.delete('token');
+      // Cleanup legacy keys from previous auth scheme.
+      localStorage.removeItem('ophelia_user_id');
+      localStorage.removeItem('telegram_user_id');
+      localStorage.removeItem('tg_user_id');
+      localStorage.removeItem('user_id');
     }
 
     if (changed) {

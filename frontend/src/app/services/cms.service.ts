@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { map, Observable, shareReplay, throwError, catchError, of } from 'rxjs';
 import { Event, NewsPost, Post, Project, SiteSettings } from '../models/cms.model';
 
@@ -85,19 +85,17 @@ export class CmsService {
   }
 
   registerForEvent(eventId: string): Observable<{ ok: boolean }> {
-    const userId = this.resolveUserId();
-    if (userId === null) {
+    const token = this.resolveAuthToken();
+    if (token === null) {
       return throwError(
-        () => new Error('Не найден user_id. Откройте страницу из Telegram-бота.'),
+        () => new Error('Не найден токен авторизации. Откройте страницу по ссылке из Telegram-бота.'),
       );
     }
 
-    const headers = new HttpHeaders().set('X-User-ID', String(userId));
-    const body = { event_id: eventId, user_id: userId };
+    const body = { event_id: eventId };
     return this.http.post<{ ok: boolean }>(
       `${this.apiBase}/cms/events/register`,
       body,
-      { headers },
     );
   }
 
@@ -254,19 +252,19 @@ export class CmsService {
     return false;
   }
 
-  private resolveUserId(): number | null {
+  private resolveAuthToken(): string | null {
     if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
       return null;
     }
-    const keys = ['ophelia_user_id', 'telegram_user_id', 'tg_user_id', 'user_id'];
+    const keys = ['ophelia_cms_jwt', 'cms_jwt', 'auth_token', 'token'];
     for (const key of keys) {
       const raw = localStorage.getItem(key);
       if (!raw) {
         continue;
       }
-      const parsed = Number(raw);
-      if (Number.isInteger(parsed) && parsed > 0) {
-        return parsed;
+      const token = raw.trim();
+      if (token !== '') {
+        return token;
       }
     }
     return null;

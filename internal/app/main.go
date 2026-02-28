@@ -24,6 +24,8 @@ type Config struct {
 	GoogleAPI    string `json:"google_api"` // Ключ для GigaChat
 	TargetChatID int64  `json:"target_chat_id"`
 	BotAPIUrl    string `json:"bot_api_url"`
+	CMSSiteURL   string `json:"cms_site_url"`
+	CMSJWTSecret string `json:"cms_jwt_secret"`
 }
 
 // ==========================================
@@ -180,5 +182,11 @@ func applyEnvOverrides(cfg *Config) {
 		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
 			cfg.TargetChatID = id
 		}
+	}
+	if v := os.Getenv("OPHELIA_CMS_SITE_URL"); v != "" {
+		cfg.CMSSiteURL = v
+	}
+	if v := os.Getenv("OPHELIA_CMS_JWT_SECRET"); v != "" {
+		cfg.CMSJWTSecret = v
 	}
 }

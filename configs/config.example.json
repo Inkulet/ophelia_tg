@@ -2,5 +2,7 @@
   "token": "YOUR_TELEGRAM_BOT_TOKEN",
   "google_api": "YOUR_GIGACHAT_API_KEY",
   "target_chat_id": -1000000000000,
-  "bot_api_url": ""
+  "bot_api_url": "",
+  "cms_site_url": "http://site.com/",
+  "cms_jwt_secret": "CHANGE_ME_TO_RANDOM_SECRET"
 }

@@ -10,7 +10,7 @@ func startHousekeeping() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		cleanupRateLimits(2 * time.Hour)
+		cleanupRateLimits(36 * time.Hour)
 		RotateLogsIfNeeded()
 		monitorRuntime()
 	}

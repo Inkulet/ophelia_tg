@@ -120,10 +120,8 @@ func resolveFrontendBuildRoot() string {
 func requireValidUserID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			if _, err := extractCMSUserID(r); err != nil {
-				writeCMSError(w, http.StatusUnauthorized, "valid user_id is required")
-				return
-			}
+			requireCMSJWT(next).ServeHTTP(w, r)
+			return
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -132,15 +130,8 @@ func requireValidUserID(next http.Handler) http.Handler {
 func requireAdminIDForCreatePost(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			userID, err := extractCMSUserID(r)
-			if err != nil {
-				writeCMSError(w, http.StatusUnauthorized, "valid admin user_id is required")
-				return
-			}
-			if !isAdmin(userID) {
-				writeCMSError(w, http.StatusForbidden, "admin role is required")
-				return
-			}
+			requireCMSAdminJWT(next).ServeHTTP(w, r)
+			return
 		}
 		next.ServeHTTP(w, r)
 	})
