@@ -3206,7 +3206,7 @@ func HandlePhoto(c tele.Context) error {
 	userID := c.Sender().ID
 	state := getAdminState(userID)
 	webImageURL := ""
-	if cmsService != nil {
+	if cmsService != nil && (state == STATE_EDIT_MEDIA_ADD || state == STATE_WOMAN_MEDIA) {
 		localPath, err := cmsService.saveTelegramMedia(c.Bot(), c.Message())
 		if err != nil {
 			log.Printf("⚠️ Не удалось сохранить локальную копию фото: %v", err)

@@ -575,6 +575,18 @@ func (s *CMSService) HandleBotCMSAdminMedia(c tele.Context) (bool, error) {
 	if c.Message() == nil {
 		return true, c.Reply("Пустое сообщение.")
 	}
+	if state == cmsStateProjectEditValue {
+		d := s.getDraft(c.Sender().ID)
+		if strings.TrimSpace(d.ProjectID) == "" || strings.TrimSpace(d.Field) != "media" {
+			return false, nil
+		}
+	}
+	if state == cmsStateEventEditValue {
+		d := s.getDraft(c.Sender().ID)
+		if strings.TrimSpace(d.EventID) == "" || strings.TrimSpace(d.EventField) != "media" {
+			return false, nil
+		}
+	}
 
 	mediaPath, err := s.saveTelegramMedia(c.Bot(), c.Message())
 	if err != nil {
