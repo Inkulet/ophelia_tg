@@ -31,4 +31,27 @@ export class HomeComponent implements OnInit {
       },
     });
   }
+
+  get avatarSrc(): string {
+    if (this.avatarUrl.trim() !== '') {
+      return this.avatarUrl;
+    }
+    return '/assets/photo1.jpeg';
+  }
+
+  get homeDescription(): string {
+    const value = this.settings?.homeDescription?.trim() ?? '';
+    if (value !== '') {
+      return value;
+    }
+    return 'Привет! Я Ксюша, студентка второго курса искусствоведения в СПГХПА имени Штиглица, работаю в музейной среде и веду авторский блог об искусстве.';
+  }
+
+  get locationText(): string {
+    const value = this.settings?.contactLocation?.trim() ?? '';
+    if (value !== '') {
+      return value;
+    }
+    return 'Санкт-Петербург | Студентка СПГХПА им. А.Л. Штиглица';
+  }
 }

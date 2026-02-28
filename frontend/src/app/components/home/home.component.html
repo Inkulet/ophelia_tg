@@ -1,23 +1,41 @@
-<section class="section-container">
-  <h2 class="section-title">Главная</h2>
+<div class="home-container">
+  <div class="surname-panel">
+    <h1 class="surname">Торопова Ксения</h1>
+  </div>
 
-  <p class="state-text" *ngIf="loading">Загружаем данные...</p>
-  <p class="state-text error" *ngIf="!loading && error">{{ error }}</p>
+  <div class="content-panel">
+    <div class="text-slide active">
+      <p class="highlight-text">
+        <span class="material-icons">palette</span>
+        Искусствовед и культурный исследователь
+      </p>
 
-  <div class="home-layout" *ngIf="!loading && !error">
-    <div class="avatar-wrap" *ngIf="avatarUrl">
-      <img [src]="avatarUrl" alt="Аватар" loading="lazy" />
+      <div class="animated-text">
+        <p>{{ homeDescription }}</p>
+        <ul>
+          <li>
+            <span class="material-icons">school</span>
+            Мой исследовательский интерес сосредоточен на русском искусстве рубежа XIX-XX веков и искусстве Братства Прерафаэлитов.
+          </li>
+          <li>
+            <span class="material-icons">groups</span>
+            Здесь можно познакомиться с моими выставочными проектами, записаться на экскурсию и связаться со мной для сотрудничества.
+          </li>
+        </ul>
+      </div>
     </div>
 
-    <div class="description-wrap">
-      <p class="description" *ngIf="settings?.homeDescription; else fallback">
-        {{ settings?.homeDescription }}
-      </p>
-      <ng-template #fallback>
-        <p class="description">
-          Добро пожаловать. Контент главной страницы настраивается через Telegram-бот.
-        </p>
-      </ng-template>
+    <p class="state-text" *ngIf="loading">Загружаем данные...</p>
+    <p class="state-text error" *ngIf="!loading && error">{{ error }}</p>
+  </div>
+
+  <div class="photo-panel">
+    <div class="photo-frame">
+      <img [src]="avatarSrc" alt="Profile Photo" loading="lazy">
+    </div>
+    <div class="photo-caption">
+      <span class="material-icons">location_on</span>
+      {{ locationText }}
     </div>
   </div>
-</section>
+</div>
