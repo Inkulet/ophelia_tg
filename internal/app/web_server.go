@@ -45,7 +45,8 @@ func startWebServer(addr string, cmsService *CMSService) {
 	mux.HandleFunc("/cms/events", cmsService.GetEvents)
 	mux.HandleFunc("/cms/settings", cmsService.GetSettings)
 	mux.HandleFunc("/cms/projects", cmsService.GetProjects)
-	mux.HandleFunc("/cms/news", cmsService.GetNews)
+	mux.HandleFunc("/cms/women", cmsService.GetWomen)
+	mux.HandleFunc("/api/women", cmsService.GetWomen)
 	mux.Handle("/cms/events/register", requireValidUserID(http.HandlerFunc(cmsService.RegisterForEvent)))
 
 	uploadsFS := http.StripPrefix("/uploads/", http.FileServer(http.Dir(cmsUploadsDir)))

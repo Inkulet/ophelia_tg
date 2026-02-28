@@ -28,11 +28,20 @@ export interface Project {
   mediaURL: string;
 }
 
-export interface NewsPost {
-  id: string;
-  text: string;
-  imageURL: string;
-  postURL: string;
+export interface Woman {
+  id: number;
+  name: string;
+  biography: string;
+  photoURL: string;
+  century: string;
+  spheres: string[];
+}
+
+export interface WomenPage {
+  items: Woman[];
+  limit: number;
+  offset: number;
+  total: number;
 }
 
 export interface Post {

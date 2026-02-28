@@ -5,11 +5,12 @@ import { AboutComponent } from './components/about/about.component';
 import { ProjectsComponent } from './components/projects/projects.component';
 import { ContactComponent } from './components/contact/contact.component';
 import { EventListComponent } from './components/event-list/event-list.component';
-import { NewsComponent } from './components/news/news.component';
+import { WomanArchiveComponent } from './components/woman-archive/woman-archive.component';
 
 const routes: Routes = [
   { path: '', component: HomeComponent },
-  { path: 'news', component: NewsComponent },
+  { path: 'archive', component: WomanArchiveComponent },
+  { path: 'news', redirectTo: 'archive', pathMatch: 'full' },
   { path: 'events', component: EventListComponent },
   { path: 'about', component: AboutComponent },
   { path: 'projects', component: ProjectsComponent },

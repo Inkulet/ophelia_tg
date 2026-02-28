@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { map, Observable, shareReplay, throwError, catchError, of } from 'rxjs';
-import { Event, NewsPost, Post, Project, SiteSettings } from '../models/cms.model';
+import { Event, Post, Project, SiteSettings, Woman, WomenPage } from '../models/cms.model';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -72,15 +72,19 @@ export class CmsService {
       );
   }
 
-  getNews(): Observable<NewsPost[]> {
+  getWomen(page: number, limit: number): Observable<WomenPage> {
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 12;
+    const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+    const offset = (safePage - 1) * safeLimit;
     return this.http
-      .get<AnyRecord[] | unknown>(`${this.apiBase}/cms/news`)
+      .get<AnyRecord | unknown>(`${this.apiBase}/api/women`, {
+        params: {
+          limit: String(safeLimit),
+          offset: String(offset),
+        },
+      })
       .pipe(
-        map((items) =>
-          Array.isArray(items)
-            ? items.map((item) => this.normalizeNews(item as AnyRecord))
-            : [],
-        ),
+        map((item) => this.normalizeWomenPage((item as AnyRecord) ?? {}, safeLimit, offset)),
       );
   }
 
@@ -170,12 +174,28 @@ export class CmsService {
     };
   }
 
-  private normalizeNews(item: AnyRecord): NewsPost {
+  private normalizeWomenPage(item: AnyRecord, fallbackLimit: number, fallbackOffset: number): WomenPage {
+    const rawItems = item['items'];
+    const limit = this.pickOptionalNumber(item, ['limit', 'Limit']);
+    const offset = this.pickOptionalNumber(item, ['offset', 'Offset']);
     return {
-      id: this.pickString(item, ['id', 'ID']),
-      text: this.pickString(item, ['text', 'Text']),
-      imageURL: this.pickString(item, ['image_url', 'ImageURL']),
-      postURL: this.pickString(item, ['post_url', 'PostURL']),
+      items: Array.isArray(rawItems)
+        ? rawItems.map((entry) => this.normalizeWoman((entry as AnyRecord) ?? {}))
+        : [],
+      limit: limit ?? fallbackLimit,
+      offset: offset ?? fallbackOffset,
+      total: this.pickNumber(item, ['total', 'Total']),
+    };
+  }
+
+  private normalizeWoman(item: AnyRecord): Woman {
+    return {
+      id: this.pickNumber(item, ['id', 'ID']),
+      name: this.pickString(item, ['name', 'Name']),
+      biography: this.pickString(item, ['biography', 'Biography']),
+      photoURL: this.pickString(item, ['photo_url', 'PhotoURL']),
+      century: this.pickString(item, ['century', 'Century']),
+      spheres: this.pickStringArray(item, ['spheres', 'Spheres']),
     };
   }
 
@@ -201,6 +221,11 @@ export class CmsService {
   }
 
   private pickNumber(item: AnyRecord, keys: string[]): number {
+    const value = this.pickOptionalNumber(item, keys);
+    return value ?? 0;
+  }
+
+  private pickOptionalNumber(item: AnyRecord, keys: string[]): number | null {
     for (const key of keys) {
       const value = item[key];
       if (typeof value === 'number' && Number.isFinite(value)) {
@@ -213,7 +238,7 @@ export class CmsService {
         }
       }
     }
-    return 0;
+    return null;
   }
 
   private pickNumberArray(item: AnyRecord, keys: string[]): number[] {
@@ -226,6 +251,19 @@ export class CmsService {
         .map((entry) => Number(entry))
         .filter((entry) => Number.isFinite(entry));
       return parsed;
+    }
+    return [];
+  }
+
+  private pickStringArray(item: AnyRecord, keys: string[]): string[] {
+    for (const key of keys) {
+      const value = item[key];
+      if (!Array.isArray(value)) {
+        continue;
+      }
+      return value
+        .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+        .filter((entry) => entry !== '');
     }
     return [];
   }

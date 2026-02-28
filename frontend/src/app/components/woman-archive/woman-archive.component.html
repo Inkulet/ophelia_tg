@@ -1,0 +1,57 @@
+<section class="section-container archive-section">
+  <div class="archive-header">
+    <h2 class="section-title">Архив женщин</h2>
+    <p class="archive-subtitle">База выдающихся женщин из телеграм-бота, доступная в веб-интерфейсе.</p>
+  </div>
+
+  <p class="state-text" *ngIf="loading">Загружаем архив...</p>
+  <p class="state-text error" *ngIf="!loading && error">{{ error }}</p>
+  <p class="state-text" *ngIf="!loading && !error && women.length === 0">Записи пока отсутствуют.</p>
+
+  <div class="archive-grid" *ngIf="!loading && !error && women.length > 0">
+    <article class="woman-card" *ngFor="let woman of women; trackBy: trackByWomanId">
+      <button class="card-click" type="button" (click)="openWoman(woman)">
+        <img class="woman-photo" [src]="getWomanPhoto(woman)" [alt]="woman.name" loading="lazy" />
+
+        <div class="card-content">
+          <h3>{{ woman.name }}</h3>
+          <p class="century" *ngIf="woman.century">{{ woman.century }}</p>
+
+          <div class="spheres" *ngIf="woman.spheres.length > 0">
+            <span class="sphere-chip" *ngFor="let sphere of woman.spheres">{{ sphere }}</span>
+          </div>
+        </div>
+      </button>
+    </article>
+  </div>
+
+  <div class="pagination" *ngIf="!loading && !error && total > 0">
+    <button type="button" (click)="loadWomen(page - 1)" [disabled]="!canGoPrev">Назад</button>
+    <span>Страница {{ page }} из {{ totalPages }}</span>
+    <button type="button" (click)="loadWomen(page + 1)" [disabled]="!canGoNext">Вперед</button>
+  </div>
+</section>
+
+<div class="modal-backdrop" *ngIf="selectedWoman as woman" (click)="onBackdropClick($event)">
+  <article class="woman-modal" role="dialog" aria-modal="true" [attr.aria-label]="woman.name">
+    <button class="close-modal" type="button" (click)="closeModal()" aria-label="Закрыть">×</button>
+
+    <div class="modal-layout">
+      <img class="modal-photo" [src]="getWomanPhoto(woman)" [alt]="woman.name" loading="lazy" />
+
+      <div class="modal-content">
+        <h3>{{ woman.name }}</h3>
+        <p class="century" *ngIf="woman.century">{{ woman.century }}</p>
+
+        <div class="spheres" *ngIf="woman.spheres.length > 0">
+          <span class="sphere-chip" *ngFor="let sphere of woman.spheres">{{ sphere }}</span>
+        </div>
+
+        <p class="biography" *ngIf="woman.biography; else noBiography">{{ woman.biography }}</p>
+        <ng-template #noBiography>
+          <p class="biography">Биография пока не заполнена.</p>
+        </ng-template>
+      </div>
+    </div>
+  </article>
+</div>

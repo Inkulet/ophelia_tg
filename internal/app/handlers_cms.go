@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,10 +23,10 @@ import (
 const (
 	cmsUploadsDir         = "./uploads"
 	cmsMaxMultipartMemory = 32 << 20 // 32 MiB
-	telegramNewsSourceURL = "https://t.me/s/followmylifeflow"
-	cmsNewsCacheTTL       = 5 * time.Minute
 	cmsCleanupInterval    = time.Hour
 	cmsInactiveTTL        = 2 * time.Hour
+	cmsWomenDefaultLimit  = 12
+	cmsWomenMaxLimit      = 60
 )
 
 var (
@@ -36,12 +35,6 @@ var (
 		".png": {},
 		".mp4": {},
 	}
-
-	reChannelMessage = regexp.MustCompile(`(?s)<div class="tgme_widget_message[^"]*"[^>]*data-post="([^"]+)"[^>]*>(.*?)<div class="tgme_widget_message_footer"`)
-	reChannelText    = regexp.MustCompile(`(?s)<div class="tgme_widget_message_text js-message_text"[^>]*>(.*?)</div>`)
-	reChannelBGImage = regexp.MustCompile(`background-image:url\('([^']+)'\)`)
-	reChannelImage   = regexp.MustCompile(`<img[^>]+src="([^"]+)"`)
-	reHTMLTags       = regexp.MustCompile(`(?s)<[^>]+>`)
 )
 
 type CMSService struct {
@@ -52,17 +45,22 @@ type CMSService struct {
 	drafts      map[int64]*cmsBotDraft
 	lastSeen    map[int64]time.Time
 	cleanupOnce sync.Once
-
-	newsMu        sync.RWMutex
-	newsCache     []ChannelPost
-	newsCacheTime time.Time
 }
 
-type ChannelPost struct {
-	ID       string `json:"id"`
-	Text     string `json:"text"`
-	ImageURL string `json:"image_url,omitempty"`
-	PostURL  string `json:"post_url"`
+type CMSWoman struct {
+	ID        uint     `json:"id"`
+	Name      string   `json:"name"`
+	Biography string   `json:"biography"`
+	PhotoURL  string   `json:"photo_url"`
+	Century   string   `json:"century"`
+	Spheres   []string `json:"spheres"`
+}
+
+type CMSWomenPage struct {
+	Items  []CMSWoman `json:"items"`
+	Limit  int        `json:"limit"`
+	Offset int        `json:"offset"`
+	Total  int64      `json:"total"`
 }
 
 const (
@@ -180,12 +178,19 @@ func (s *CMSService) RegisterHTTPRoutes(mux *http.ServeMux) {
 		}
 		s.GetEvents(w, r)
 	})
-	mux.HandleFunc("/cms/news", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/cms/women", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeCMSError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		s.GetNews(w, r)
+		s.GetWomen(w, r)
+	})
+	mux.HandleFunc("/api/women", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeCMSError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		s.GetWomen(w, r)
 	})
 	mux.Handle("/cms/events/register", requireValidUserID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -1025,137 +1030,145 @@ func (s *CMSService) GetEvents(w http.ResponseWriter, r *http.Request) {
 	writeCMSJSON(w, http.StatusOK, items)
 }
 
-func (s *CMSService) GetNews(w http.ResponseWriter, r *http.Request) {
-	items, err := s.GetChannelPosts(r.Context())
-	if err != nil {
-		writeCMSError(w, http.StatusBadGateway, err.Error())
+func (s *CMSService) GetWomen(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeCMSError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	writeCMSJSON(w, http.StatusOK, items)
+	if womanManager == nil || womanManager.DB == nil {
+		writeCMSError(w, http.StatusInternalServerError, "women database is not initialized")
+		return
+	}
+
+	limit, offset, err := parseWomenPagination(r)
+	if err != nil {
+		writeCMSError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	query := womanManager.DB.WithContext(r.Context()).Model(&Woman{}).Where("is_published = ?", true)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		writeCMSError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	women := make([]Woman, 0, limit)
+	if err := query.
+		Order("id desc").
+		Limit(limit).
+		Offset(offset).
+		Find(&women).Error; err != nil {
+		writeCMSError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	items := make([]CMSWoman, 0, len(women))
+	for i := range women {
+		items = append(items, mapWomanToCMS(women[i]))
+	}
+
+	writeCMSJSON(w, http.StatusOK, CMSWomenPage{
+		Items:  items,
+		Limit:  limit,
+		Offset: offset,
+		Total:  total,
+	})
 }
 
-// GetChannelPosts parses latest Telegram channel posts from public HTML mirror.
-func (s *CMSService) GetChannelPosts(ctx context.Context) ([]ChannelPost, error) {
-	now := time.Now()
-	s.newsMu.RLock()
-	if !s.newsCacheTime.IsZero() && now.Sub(s.newsCacheTime) < cmsNewsCacheTTL {
-		cached := cloneChannelPosts(s.newsCache)
-		s.newsMu.RUnlock()
-		return cached, nil
-	}
-	s.newsMu.RUnlock()
+func parseWomenPagination(r *http.Request) (int, int, error) {
+	limit := cmsWomenDefaultLimit
+	offset := 0
 
-	s.newsMu.Lock()
-	defer s.newsMu.Unlock()
-
-	// Re-check under write lock to avoid parallel refresh storms.
-	now = time.Now()
-	if !s.newsCacheTime.IsZero() && now.Sub(s.newsCacheTime) < cmsNewsCacheTTL {
-		return cloneChannelPosts(s.newsCache), nil
-	}
-
-	posts, err := s.fetchChannelPosts(ctx)
-	if err != nil {
-		if !s.newsCacheTime.IsZero() {
-			return cloneChannelPosts(s.newsCache), nil
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			return 0, 0, fmt.Errorf("limit must be a positive integer")
 		}
-		return nil, err
+		if parsed > cmsWomenMaxLimit {
+			parsed = cmsWomenMaxLimit
+		}
+		limit = parsed
 	}
 
-	s.newsCache = cloneChannelPosts(posts)
-	s.newsCacheTime = time.Now()
-	return cloneChannelPosts(s.newsCache), nil
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			return 0, 0, fmt.Errorf("offset must be a non-negative integer")
+		}
+		offset = parsed
+	}
+
+	return limit, offset, nil
 }
 
-func (s *CMSService) fetchChannelPosts(ctx context.Context) ([]ChannelPost, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, telegramNewsSourceURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+func mapWomanToCMS(woman Woman) CMSWoman {
+	return CMSWoman{
+		ID:        woman.ID,
+		Name:      strings.TrimSpace(woman.Name),
+		Biography: strings.TrimSpace(woman.Info),
+		PhotoURL:  chooseWomanPhotoURL(woman),
+		Century:   resolveWomanCentury(woman),
+		Spheres:   splitWomanSpheres(woman.Field),
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; OpheliaCMS/1.0)")
+}
 
-	client := &http.Client{Timeout: 12 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch telegram channel: %w", err)
+func chooseWomanPhotoURL(woman Woman) string {
+	if photo := strings.TrimSpace(woman.WebImageURL); photo != "" {
+		return photo
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("telegram channel status: %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read telegram html: %w", err)
-	}
-	htmlBody := string(body)
-
-	matches := reChannelMessage.FindAllStringSubmatch(htmlBody, -1)
-	posts := make([]ChannelPost, 0, 10)
-	for _, match := range matches {
-		if len(match) < 3 {
+	for _, media := range woman.MediaIDs {
+		media = strings.TrimSpace(media)
+		if media == "" {
 			continue
 		}
-		if len(posts) >= 10 {
-			break
+		if strings.HasPrefix(media, "http://") || strings.HasPrefix(media, "https://") {
+			return media
 		}
-
-		postRef := strings.TrimSpace(match[1])
-		fragment := match[2]
-		if postRef == "" {
-			continue
+		if strings.HasPrefix(media, "/") || strings.HasPrefix(media, "./") || strings.HasPrefix(media, "uploads/") {
+			return media
 		}
-
-		text := extractChannelText(fragment)
-		imageURL := extractChannelImageURL(fragment)
-		if text == "" && imageURL == "" {
-			continue
-		}
-
-		posts = append(posts, ChannelPost{
-			ID:       strings.ReplaceAll(postRef, "/", "_"),
-			Text:     text,
-			ImageURL: imageURL,
-			PostURL:  "https://t.me/" + postRef,
-		})
-	}
-
-	return posts, nil
-}
-
-func cloneChannelPosts(items []ChannelPost) []ChannelPost {
-	if len(items) == 0 {
-		return []ChannelPost{}
-	}
-	out := make([]ChannelPost, len(items))
-	copy(out, items)
-	return out
-}
-
-func extractChannelText(fragment string) string {
-	match := reChannelText.FindStringSubmatch(fragment)
-	if len(match) < 2 {
-		return ""
-	}
-	text := match[1]
-	text = strings.ReplaceAll(text, "<br>", "\n")
-	text = strings.ReplaceAll(text, "<br/>", "\n")
-	text = strings.ReplaceAll(text, "<br />", "\n")
-	text = reHTMLTags.ReplaceAllString(text, "")
-	text = html.UnescapeString(text)
-	text = strings.TrimSpace(text)
-	return text
-}
-
-func extractChannelImageURL(fragment string) string {
-	if m := reChannelBGImage.FindStringSubmatch(fragment); len(m) >= 2 {
-		return strings.TrimSpace(html.UnescapeString(m[1]))
-	}
-	if m := reChannelImage.FindStringSubmatch(fragment); len(m) >= 2 {
-		return strings.TrimSpace(html.UnescapeString(m[1]))
 	}
 	return ""
+}
+
+func resolveWomanCentury(woman Woman) string {
+	century := strings.TrimSpace(formatEra(woman.YearFrom, woman.YearTo))
+	if century != "" {
+		return century
+	}
+	if from, to := parseYearRange(woman.Year); from != 0 || to != 0 {
+		return strings.TrimSpace(formatEra(from, to))
+	}
+	return ""
+}
+
+func splitWomanSpheres(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []string{}
+	}
+	normalized := strings.NewReplacer(";", ",", "|", ",", "/", ",", "\n", ",").Replace(raw)
+	parts := strings.Split(normalized, ",")
+	spheres := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key := strings.ToLower(part)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		spheres = append(spheres, part)
+	}
+	if len(spheres) == 0 {
+		return []string{raw}
+	}
+	return spheres
 }
 
 // RegisterForEvent registers current user in event participants.

@@ -1,0 +1,205 @@
+.archive-section {
+  width: 100%;
+  max-width: 1150px;
+  padding: 2rem;
+  border-radius: 14px;
+  background: rgba(43, 44, 37, 0.82);
+  border: 1px solid rgba(179, 173, 164, 0.25);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(6px);
+}
+
+.archive-header {
+  margin-bottom: 1.3rem;
+}
+
+.section-title {
+  margin-bottom: 0.45rem;
+  color: var(--platinum);
+  border-bottom: 2px solid var(--axolotl);
+  padding-bottom: 0.5rem;
+}
+
+.archive-subtitle {
+  color: rgba(211, 206, 195, 0.9);
+}
+
+.state-text {
+  color: var(--platinum);
+}
+
+.state-text.error {
+  color: #ffb3b3;
+}
+
+.archive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.woman-card {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(179, 173, 164, 0.2);
+  background: rgba(113, 112, 92, 0.18);
+}
+
+.card-click {
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.card-click:hover .woman-photo {
+  transform: scale(1.03);
+}
+
+.woman-photo {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  transition: transform 0.25s ease;
+}
+
+.card-content {
+  padding: 0.85rem;
+}
+
+.card-content h3 {
+  font-size: 1.06rem;
+  line-height: 1.3;
+  color: #f2ede4;
+  margin-bottom: 0.35rem;
+}
+
+.century {
+  color: rgba(211, 206, 195, 0.8);
+  margin-bottom: 0.5rem;
+  font-size: 0.92rem;
+}
+
+.spheres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.sphere-chip {
+  border: 1px solid rgba(179, 173, 164, 0.32);
+  color: #f0ebdf;
+  background: rgba(62, 58, 55, 0.6);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+.pagination {
+  margin-top: 1.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+}
+
+.pagination button {
+  border: 1px solid rgba(179, 173, 164, 0.35);
+  background: rgba(62, 58, 55, 0.72);
+  color: var(--platinum);
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pagination button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.pagination span {
+  color: rgba(230, 224, 214, 0.9);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(16, 17, 14, 0.72);
+  backdrop-filter: blur(2px);
+  padding: 1rem;
+}
+
+.woman-modal {
+  position: relative;
+  width: min(980px, 100%);
+  max-height: 92vh;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(179, 173, 164, 0.28);
+  background: linear-gradient(160deg, rgba(43, 44, 37, 0.96), rgba(53, 51, 45, 0.96));
+  color: #f4f0e8;
+  padding: 1.2rem;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+}
+
+.close-modal {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  border: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(179, 173, 164, 0.26);
+  color: #f8f4eb;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  gap: 1rem;
+}
+
+.modal-photo {
+  width: 100%;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.modal-content h3 {
+  font-size: 1.45rem;
+  margin-bottom: 0.35rem;
+}
+
+.biography {
+  margin-top: 0.9rem;
+  white-space: pre-line;
+  line-height: 1.55;
+  color: rgba(240, 236, 227, 0.94);
+}
+
+@media (max-width: 780px) {
+  .archive-section {
+    padding: 1.2rem;
+  }
+
+  .modal-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-photo {
+    max-height: 360px;
+  }
+}
