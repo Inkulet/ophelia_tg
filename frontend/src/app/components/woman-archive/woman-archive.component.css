@@ -24,6 +24,53 @@
   color: rgba(211, 206, 195, 0.9);
 }
 
+.filters-panel {
+  margin-bottom: 1rem;
+}
+
+.filters-label {
+  margin: 0 0 0.55rem;
+  color: rgba(230, 224, 214, 0.95);
+  font-size: 0.92rem;
+}
+
+.filters-scroll {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+}
+
+.filters-scroll::-webkit-scrollbar {
+  height: 7px;
+}
+
+.filters-scroll::-webkit-scrollbar-thumb {
+  background: rgba(179, 173, 164, 0.45);
+  border-radius: 999px;
+}
+
+.filter-chip {
+  flex: 0 0 auto;
+  border: 1px solid rgba(179, 173, 164, 0.35);
+  background: rgba(62, 58, 55, 0.72);
+  color: #f0ebdf;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.86rem;
+  transition: all 0.2s ease;
+}
+
+.filter-chip:hover {
+  background: rgba(90, 84, 74, 0.78);
+}
+
+.filter-chip.active {
+  border-color: rgba(219, 210, 193, 0.85);
+  background: rgba(147, 132, 95, 0.55);
+}
+
 .state-text {
   color: var(--platinum);
 }

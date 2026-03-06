@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { map, Observable, shareReplay, throwError, catchError, of } from 'rxjs';
-import { Event, Post, Project, SiteSettings, Woman, WomenPage } from '../models/cms.model';
+import { Event, Post, Project, SiteSettings, TagStat, Woman, WomenFilters, WomenPage } from '../models/cms.model';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -72,16 +72,41 @@ export class CmsService {
       );
   }
 
-  getWomen(page: number, limit: number): Observable<WomenPage> {
-    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 12;
-    const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  getFields(): Observable<string[]> {
+    return this.http
+      .get<string[] | unknown>(`${this.apiBase}/api/fields`)
+      .pipe(
+        map((items) =>
+          Array.isArray(items)
+            ? items
+                .map((item) => (typeof item === 'string' ? item.trim() : ''))
+                .filter((item) => item !== '')
+            : [],
+        ),
+      );
+  }
+
+  getTags(): Observable<TagStat[]> {
+    return this.http
+      .get<AnyRecord[] | unknown>(`${this.apiBase}/api/tags`)
+      .pipe(
+        map((items) =>
+          Array.isArray(items)
+            ? items.map((item) => this.normalizeTagStat((item as AnyRecord) ?? {}))
+            : [],
+        ),
+      );
+  }
+
+  getWomen(filters: WomenFilters = {}): Observable<WomenPage> {
+    const safeLimit = Number.isFinite(filters.limit) && (filters.limit ?? 0) > 0 ? Math.floor(filters.limit ?? 12) : 12;
+    const safePage = Number.isFinite(filters.page) && (filters.page ?? 0) > 0 ? Math.floor(filters.page ?? 1) : 1;
     const offset = (safePage - 1) * safeLimit;
+    const params = this.buildWomenParams(filters, safeLimit, offset);
+
     return this.http
       .get<AnyRecord | unknown>(`${this.apiBase}/api/women`, {
-        params: {
-          limit: String(safeLimit),
-          offset: String(offset),
-        },
+        params,
       })
       .pipe(
         map((item) => this.normalizeWomenPage((item as AnyRecord) ?? {}, safeLimit, offset)),
@@ -198,6 +223,47 @@ export class CmsService {
       century: this.pickString(item, ['century', 'Century']),
       spheres: this.pickStringArray(item, ['spheres', 'Spheres']),
     };
+  }
+
+  private normalizeTagStat(item: AnyRecord): TagStat {
+    return {
+      tag: this.pickString(item, ['tag', 'Tag']),
+      count: this.pickNumber(item, ['count', 'Count']),
+    };
+  }
+
+  private buildWomenParams(filters: WomenFilters, limit: number, offset: number): HttpParams {
+    let params = new HttpParams()
+      .set('limit', String(limit))
+      .set('offset', String(offset));
+
+    const query = (filters.query ?? '').trim();
+    if (query !== '') {
+      params = params.set('query', query);
+    }
+
+    const field = (filters.field ?? '').trim();
+    if (field !== '') {
+      params = params.set('field', field);
+    }
+
+    const tags = Array.isArray(filters.tags) ? filters.tags : [];
+    for (const tag of tags) {
+      const normalized = tag.trim();
+      if (normalized === '') {
+        continue;
+      }
+      params = params.append('tag', normalized);
+    }
+
+    if (Number.isFinite(filters.yearFrom)) {
+      params = params.set('year_from', String(Math.floor(filters.yearFrom as number)));
+    }
+    if (Number.isFinite(filters.yearTo)) {
+      params = params.set('year_to', String(Math.floor(filters.yearTo as number)));
+    }
+
+    return params;
   }
 
   private normalizePost(item: AnyRecord): Post {

@@ -12,16 +12,21 @@ import { CmsService } from '../../services/cms.service';
 })
 export class WomanArchiveComponent implements OnInit {
   women: Woman[] = [];
+  fields: string[] = [];
   loading = true;
+  fieldsLoading = true;
   error = '';
+  fieldsError = '';
   page = 1;
   limit = 12;
   total = 0;
+  selectedField = '';
   selectedWoman: Woman | null = null;
 
   constructor(private readonly cmsService: CmsService) {}
 
   ngOnInit(): void {
+    this.loadFields();
     this.loadWomen(1);
   }
 
@@ -45,7 +50,11 @@ export class WomanArchiveComponent implements OnInit {
     this.loading = true;
     this.error = '';
 
-    this.cmsService.getWomen(nextPage, this.limit).subscribe({
+    this.cmsService.getWomen({
+      page: nextPage,
+      limit: this.limit,
+      field: this.selectedField || undefined,
+    }).subscribe({
       next: (response) => {
         this.page = nextPage;
         this.women = response.items;
@@ -57,6 +66,27 @@ export class WomanArchiveComponent implements OnInit {
         this.loading = false;
       },
     });
+  }
+
+  loadFields(): void {
+    this.fieldsLoading = true;
+    this.fieldsError = '';
+
+    this.cmsService.getFields().subscribe({
+      next: (fields) => {
+        this.fields = fields;
+        this.fieldsLoading = false;
+      },
+      error: () => {
+        this.fieldsError = 'Не удалось загрузить список сфер.';
+        this.fieldsLoading = false;
+      },
+    });
+  }
+
+  selectField(field: string): void {
+    this.selectedField = field;
+    this.loadWomen(1);
   }
 
   openWoman(woman: Woman): void {
@@ -89,5 +119,9 @@ export class WomanArchiveComponent implements OnInit {
 
   trackByWomanId(_: number, woman: Woman): number {
     return woman.id;
+  }
+
+  trackByField(_: number, field: string): string {
+    return field;
   }
 }

@@ -4,6 +4,32 @@
     <p class="archive-subtitle">База выдающихся женщин из телеграм-бота, доступная в веб-интерфейсе.</p>
   </div>
 
+  <div class="filters-panel">
+    <p class="filters-label">Фильтр по сфере</p>
+    <p class="state-text" *ngIf="fieldsLoading">Загружаем сферы...</p>
+    <p class="state-text error" *ngIf="!fieldsLoading && fieldsError">{{ fieldsError }}</p>
+
+    <div class="filters-scroll" *ngIf="!fieldsLoading && !fieldsError">
+      <button
+        type="button"
+        class="filter-chip"
+        [class.active]="selectedField === ''"
+        (click)="selectField('')"
+      >
+        Все
+      </button>
+      <button
+        type="button"
+        class="filter-chip"
+        *ngFor="let field of fields; trackBy: trackByField"
+        [class.active]="selectedField === field"
+        (click)="selectField(field)"
+      >
+        {{ field }}
+      </button>
+    </div>
+  </div>
+
   <p class="state-text" *ngIf="loading">Загружаем архив...</p>
   <p class="state-text error" *ngIf="!loading && error">{{ error }}</p>
   <p class="state-text" *ngIf="!loading && !error && women.length === 0">Записи пока отсутствуют.</p>

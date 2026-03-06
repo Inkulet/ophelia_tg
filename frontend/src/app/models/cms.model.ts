@@ -45,6 +45,21 @@ export interface WomenPage {
   total: number;
 }
 
+export interface WomenFilters {
+  page?: number;
+  limit?: number;
+  query?: string;
+  field?: string;
+  tags?: string[];
+  yearFrom?: number;
+  yearTo?: number;
+}
+
+export interface TagStat {
+  tag: string;
+  count: number;
+}
+
 export interface Post {
   id: string;
   title: string;

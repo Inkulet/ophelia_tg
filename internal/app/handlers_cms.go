@@ -200,6 +200,20 @@ func (s *CMSService) RegisterHTTPRoutes(mux *http.ServeMux) {
 		}
 		s.GetWomen(w, r)
 	})
+	mux.HandleFunc("/api/fields", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeCMSError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		s.GetWomenFields(w, r)
+	})
+	mux.HandleFunc("/api/tags", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeCMSError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		s.GetWomenTags(w, r)
+	})
 	mux.Handle("/cms/events/register", requireValidUserID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeCMSError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -1163,27 +1177,30 @@ func (s *CMSService) GetWomen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := womanManager.DB.WithContext(r.Context()).Model(&Woman{}).Where("is_published = ?", true)
-
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		writeCMSError(w, http.StatusInternalServerError, err.Error())
+	filters, err := parseWomenSearchFilters(r)
+	if err != nil {
+		writeCMSError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	filters.PublishedOnly = true
+	filters.UnpublishedOnly = false
+	filters.Limit = 0
 
-	women := make([]Woman, 0, limit)
-	if err := query.
-		Order("id desc").
-		Limit(limit).
-		Offset(offset).
-		Find(&women).Error; err != nil {
-		writeCMSError(w, http.StatusInternalServerError, err.Error())
-		return
+	filteredWomen := womanManager.SearchWomenAdvanced(filters)
+	total := int64(len(filteredWomen))
+
+	if offset > len(filteredWomen) {
+		offset = len(filteredWomen)
 	}
+	end := offset + limit
+	if end > len(filteredWomen) {
+		end = len(filteredWomen)
+	}
+	pagedWomen := filteredWomen[offset:end]
 
-	items := make([]CMSWoman, 0, len(women))
-	for i := range women {
-		items = append(items, s.mapWomanToCMS(r.Context(), &women[i]))
+	items := make([]CMSWoman, 0, len(pagedWomen))
+	for i := range pagedWomen {
+		items = append(items, s.mapWomanToCMS(r.Context(), &pagedWomen[i]))
 	}
 
 	writeCMSJSON(w, http.StatusOK, CMSWomenPage{
@@ -1192,6 +1209,30 @@ func (s *CMSService) GetWomen(w http.ResponseWriter, r *http.Request) {
 		Offset: offset,
 		Total:  total,
 	})
+}
+
+func (s *CMSService) GetWomenFields(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeCMSError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if womanManager == nil || womanManager.DB == nil {
+		writeCMSError(w, http.StatusInternalServerError, "women database is not initialized")
+		return
+	}
+	writeCMSJSON(w, http.StatusOK, womanManager.GetUniqueFields())
+}
+
+func (s *CMSService) GetWomenTags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeCMSError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if womanManager == nil || womanManager.DB == nil {
+		writeCMSError(w, http.StatusInternalServerError, "women database is not initialized")
+		return
+	}
+	writeCMSJSON(w, http.StatusOK, womanManager.GetTagStats())
 }
 
 func parseWomenPagination(r *http.Request) (int, int, error) {
@@ -1218,6 +1259,72 @@ func parseWomenPagination(r *http.Request) (int, int, error) {
 	}
 
 	return limit, offset, nil
+}
+
+func parseWomenSearchFilters(r *http.Request) (SearchFilters, error) {
+	filters := SearchFilters{}
+	query := r.URL.Query()
+
+	filters.Query = strings.TrimSpace(query.Get("query"))
+	if filters.Query == "" {
+		filters.Query = strings.TrimSpace(query.Get("q"))
+	}
+
+	filters.Field = strings.TrimSpace(query.Get("field"))
+	filters.Tags = parseTagFilters(query)
+
+	if raw := strings.TrimSpace(query.Get("year_from")); raw != "" {
+		yearFrom, err := strconv.Atoi(raw)
+		if err != nil {
+			return SearchFilters{}, fmt.Errorf("year_from must be an integer")
+		}
+		filters.YearFrom = yearFrom
+	}
+
+	if raw := strings.TrimSpace(query.Get("year_to")); raw != "" {
+		yearTo, err := strconv.Atoi(raw)
+		if err != nil {
+			return SearchFilters{}, fmt.Errorf("year_to must be an integer")
+		}
+		filters.YearTo = yearTo
+	}
+
+	if raw := strings.TrimSpace(query.Get("year")); raw != "" && filters.YearFrom == 0 && filters.YearTo == 0 {
+		year, err := strconv.Atoi(raw)
+		if err != nil {
+			return SearchFilters{}, fmt.Errorf("year must be an integer")
+		}
+		filters.YearFrom = year
+		filters.YearTo = year
+	}
+
+	return filters, nil
+}
+
+func parseTagFilters(query url.Values) []string {
+	rawTags := make([]string, 0)
+	rawTags = append(rawTags, query["tag"]...)
+	rawTags = append(rawTags, query["tags"]...)
+	if joined := strings.TrimSpace(query.Get("tags")); joined != "" {
+		rawTags = append(rawTags, joined)
+	}
+
+	seen := make(map[string]struct{})
+	tags := make([]string, 0, len(rawTags))
+	for _, rawTag := range rawTags {
+		for _, tag := range parseTagsText(rawTag) {
+			key := strings.ToLower(strings.TrimSpace(tag))
+			if key == "" {
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			tags = append(tags, key)
+		}
+	}
+	return tags
 }
 
 func (s *CMSService) mapWomanToCMS(ctx context.Context, woman *Woman) CMSWoman {
